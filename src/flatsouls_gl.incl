@@ -1,0 +1,2 @@
+GLFUN(glGenVertexArrays, void (*glGenVertexArrays)(GLsizei n, GLuint *arrays))
+GLFUN(glBindVertexArray, void (*glBindVertexArray)(GLuint array))

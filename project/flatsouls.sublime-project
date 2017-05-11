@@ -1,15 +1,21 @@
 {
-  "folders":
-  [
-    {
-      "path": "../"
-    }
-  ],
-  "settings": {
-    "tab_size": 2
-  },
-  "file_exclude_patterns": [
-    "*.out",
-    "*.o"
-  ]
+	"file_exclude_patterns":
+	[
+		"*.out",
+		"*.o",
+		"*.so"
+	],
+	"folders":
+	[
+		{
+			"path": "/home/christopher/Private/flatsouls"
+		},
+		{
+			"path": "/home/christopher/Private/tatakai/src"
+		}
+	],
+	"settings":
+	{
+		"tab_size": 2
+	}
 }
