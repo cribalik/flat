@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <math.h>
 #include "flatsouls_logging.h"
 
@@ -104,6 +105,7 @@ static v2 v2_create(float x, float y) {v2 r; r.x = x; r.y = y; return r;}
 static v3 v3_create(float x, float y, float z) {v3 r; r.x=x; r.y=y; r.z=z; return r;}
 static v4 v4_create(float x, float y, float z, float w) {v4 r; r.x=x; r.y=y; r.z=z; r.w=w; return r;}
 static v2 v3_xy(v3 v) {return v2_create(v.x, v.y);}
+static v2 v2_add(v2 v, float x, float y) {return v2_create(v.x+x, v.y+y);}
 
 static v2 v2i_to_v2(v2i v) {return v2_create(v.x, v.y);}
 
@@ -111,6 +113,11 @@ typedef enum {
   ENTITY_NULL,
   ENTITY_PLAYER
 } EntityType;
+
+static const char* entity_type_names[] = {
+  "Null",
+  "Player"
+};
 
 typedef struct {
   EntityType type;
@@ -130,7 +137,7 @@ typedef struct {
     sprite_element_buffer,
     sprite_shader, sprite_view_location;
   Texture sprite_sheet;
-  v2 sprites[256];
+  struct {v2 pos, tpos;} sprites[256];
   int num_sprites;
 } Renderer;
 
@@ -144,14 +151,31 @@ typedef struct {
 
 #define isset(flags, flag) (((flags) & (flag)) != 0)
 
-static void render_sprite(Renderer* r, v3 pos, v2 size) {
+static void render_sprite(Renderer* r, v3 p, v2 size) {
   /* TODO: get x and y positions of sprite in sprite sheet */
+  v2 p2 = v3_xy(p);
   assert(r->sprite_sheet.id);
-  assert(r->num_sprites + 4 < (int) arrcount(r->sprites));
-  r->sprites[r->num_sprites++] = v2_create(pos.x, pos.y);
-  r->sprites[r->num_sprites++] = v2_create(pos.x + size.x, pos.y);
-  r->sprites[r->num_sprites++] = v2_create(pos.x, pos.y + size.y);
-  r->sprites[r->num_sprites++] = v2_create(pos.x + size.x, pos.y + size.y);
+  assert(r->num_sprites + 4 < (int)arrcount(r->sprites));
+
+  r->sprites[r->num_sprites].pos = p2;
+  r->sprites[r->num_sprites].tpos = v2_create(0, 0);
+  ++r->num_sprites;
+  r->sprites[r->num_sprites].pos = v2_add(p2, size.x, 0);
+  r->sprites[r->num_sprites].tpos = v2_create(1, 0);
+  ++r->num_sprites;
+  r->sprites[r->num_sprites].pos = v2_add(p2, 0, size.y);
+  r->sprites[r->num_sprites].tpos = v2_create(0, 1);
+  ++r->num_sprites;
+  r->sprites[r->num_sprites].pos = v2_add(p2, size.x, size.y);
+  r->sprites[r->num_sprites].tpos = v2_create(1, 1);
+  ++r->num_sprites;
+}
+
+static void render_clear(Renderer *r) {
+  glClearColor(0.0, 0.0, 0.0, 1.0);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  glOKORDIE;
+  r->num_sprites = 0;
 }
 
 static LoadTextureFromFile load_texture_from_file;
@@ -186,7 +210,9 @@ void init(void* mem, int mem_size, Funs dfuns) {
       glOKORDIE;
 
       glEnableVertexAttribArray(0);
-      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*) 0);
+      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprites), (void*) 0);
+      glEnableVertexAttribArray(1);
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprites), (void*) (2*sizeof(float)));
       glOKORDIE;
 
       glGenBuffers(1, &r->sprite_element_buffer);
@@ -203,20 +229,16 @@ void init(void* mem, int mem_size, Funs dfuns) {
     glOKORDIE;
 
     /* Get/set uniforms */
-    #if 0
-    {
-      glUseProgram(r->sprite_shader);
-      glOKORDIE;
-      glActiveTexture(GL_TEXTURE0);
-      glOKORDIE;
-      glBindTexture(GL_TEXTURE_2D, r->sprite_sheet.id);
-      glOKORDIE;
-      glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
-      glOKORDIE;
-      r->sprite_view_location = glGetUniformLocation(r->sprite_shader, "u_view");
-      glOKORDIE;
-    }
-    #endif
+    glUseProgram(r->sprite_shader);
+    glOKORDIE;
+    glActiveTexture(GL_TEXTURE0);
+    glOKORDIE;
+    glBindTexture(GL_TEXTURE_2D, r->sprite_sheet.id);
+    glOKORDIE;
+    glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
+    glOKORDIE;
+    r->sprite_view_location = glGetUniformLocation(r->sprite_shader, "u_view");
+    glOKORDIE;
   }
 
   /* Create player */
@@ -230,34 +252,56 @@ void init(void* mem, int mem_size, Funs dfuns) {
   }
 }
 
+void print(const char* fmt, ...) {
+  const char *c = fmt;
+  va_list args;
+  va_start(args, fmt);
+  while (*c) {
+    if (*c != '%') {putchar(*c++); continue;}
+    ++c;
+    switch (*c++) {
+      case '%': {
+        putchar('%');
+        putchar('%');
+      } break;
+      case 'e': {
+        Entity* e = va_arg(args, Entity*);
+        printf("%s: x: %f y: %f z: %f\n", entity_type_names[e->type], e->pos.x, e->pos.y, e->pos.z);
+      } break;
+    }
+  }
+  va_end(args);
+}
+
 int main_loop(void* mem, long ms, Input input) {
+  static long last_ms = 0;
   Memory* m = mem;
   Renderer* renderer = &m->renderer;
+  float dt = (ms - last_ms) * 0.06;
+  int i;
+  last_ms = ms;
+  printf("%li %f\n", ms ,dt);
 
   /* clear */
-  glClearColor(0.5 + 0.5*sin(ms/200.0), 1.0, 0.5 + 0.5*sin(ms/200.0), 1.0);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  glOKORDIE;
-  renderer->num_sprites = 0;
+  render_clear(renderer);
 
   /* Update entities */
-  {
-    Entity* e;
-    for (e = m->entities; e < m->entities + m->num_entities; ++e) {
-      switch (e->type) {
-        case ENTITY_NULL:
-          fprintf(stderr, "Unknown entity type found\n");
-          abort();
-          break;
-        case ENTITY_PLAYER:
-          #define PLAYER_SPEED 0.01
-          e->pos.x += PLAYER_SPEED*input.is_down[BUTTON_RIGHT];
-          e->pos.x -= PLAYER_SPEED*input.is_down[BUTTON_LEFT];
-          e->pos.y += PLAYER_SPEED*input.is_down[BUTTON_UP];
-          e->pos.y -= PLAYER_SPEED*input.is_down[BUTTON_DOWN];
-          render_sprite(&m->renderer, e->pos, v2_create(0.1, 0.1));
-          break;
-      }
+  for (i = 0; i < m->num_entities; ++i) {
+    Entity *e = m->entities + i;
+    switch (e->type) {
+      case ENTITY_NULL:
+        fprintf(stderr, "Unknown entity type found\n");
+        abort();
+        break;
+      case ENTITY_PLAYER:
+        #define PLAYER_SPEED 0.01
+        e->pos.x += dt*PLAYER_SPEED*input.is_down[BUTTON_RIGHT];
+        e->pos.x -= dt*PLAYER_SPEED*input.is_down[BUTTON_LEFT];
+        e->pos.y += dt*PLAYER_SPEED*input.is_down[BUTTON_UP];
+        e->pos.y -= dt*PLAYER_SPEED*input.is_down[BUTTON_DOWN];
+        render_sprite(&m->renderer, e->pos, v2_create(0.1, 0.1));
+        print("%e\n", e);
+        break;
     }
   }
 
@@ -267,11 +311,13 @@ int main_loop(void* mem, long ms, Input input) {
   render_sprite(&m->renderer, v3_create(-0.3, -0.3, 0), v2_create(0.1, 0.1));
 
   /* draw sprites */
-  fprintf(stderr, "%i\n", renderer->num_sprites);
   glUseProgram(renderer->sprite_shader);
+  glOKORDIE;
   glBindVertexArray(renderer->sprites_vertex_array);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_sprites*sizeof(renderer->sprites[0]), renderer->sprites);
-  glDrawElements(GL_TRIANGLES, 6*renderer->num_sprites, GL_UNSIGNED_SHORT, 0);
+  glOKORDIE;
+  glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_sprites*sizeof(*renderer->sprites), renderer->sprites);
+  glOKORDIE;
+  glDrawElements(GL_TRIANGLES, renderer->num_sprites, GL_UNSIGNED_SHORT, 0);
   glOKORDIE;
 
   return input.was_pressed[BUTTON_START];

@@ -1,8 +1,17 @@
 #include <stdarg.h>
-#define LOG_ERROR __FILE__,__LINE__,1
-#define LOG_DEBUG __FILE__,__LINE__,2
+
+#define LOG_LEVEL_DEBUG 1
+#define LOG_LEVEL_RELEASE 2
+
+#ifndef LOG_LEVEL
+#define LOG_LEVEL 1
+#endif
+
+#define LOG_DEBUG __FILE__,__LINE__,LOG_LEVEL_DEBUG
+#define LOG_ERROR __FILE__,__LINE__,LOG_LEVEL_RELEASE
 static void LOG(const char* file, int line, int type, const char* fmt, ...) {
   va_list args;
+  if (LOG_LEVEL <= type) return;
   va_start(args, fmt);
   fprintf(stderr, "%s:%i %s: ", file, line, type == 1 ? "error" : "debug");
   vfprintf(stderr, fmt, args);
@@ -11,6 +20,7 @@ static void LOG(const char* file, int line, int type, const char* fmt, ...) {
 
 static void LOG_AND_ABORT(const char* file, int line, int type, const char* fmt, ...) {
   va_list args;
+  if (LOG_LEVEL <= type) return;
   va_start(args, fmt);
   fprintf(stderr, "%s:%i %s: ", file, line, type == 1 ? "error" : "debug");
   vfprintf(stderr, fmt, args);

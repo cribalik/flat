@@ -37,7 +37,16 @@ typedef struct {
   float lx, ly, rx, ry;
 } Input;
 
-typedef void (*LoadTextureFromFile)(const char* filename, GLuint* result, int* w, int* h);
 typedef struct {
-  LoadTextureFromFile load_texture_from_file;
+  float
+    x, y, w, h,
+    advance,
+    tx, ty, tw, th;
+} Glyph;
+
+typedef void (*LoadImageTextureFromFile)(const char* filename, GLuint* result, int* w, int* h);
+typedef void (*LoadFontFromFile)(const char* filename, GLuint* out_texture, Glyph *out_glyphs);
+typedef struct {
+  LoadImageTextureFromFile load_image_texture_from_file;
+  LoadFontFromFile load_font_from_file;
 } Funs;
