@@ -1,7 +1,7 @@
 #include <stdarg.h>
 #define LOG_ERROR __FILE__,__LINE__,1
 #define LOG_DEBUG __FILE__,__LINE__,2
-void LOG(const char* file, int line, int type, const char* fmt, ...) {
+static void LOG(const char* file, int line, int type, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
   fprintf(stderr, "%s:%i %s: ", file, line, type == 1 ? "error" : "debug");
@@ -9,7 +9,7 @@ void LOG(const char* file, int line, int type, const char* fmt, ...) {
   va_end(args);
 }
 
-void LOG_AND_ABORT(const char* file, int line, int type, const char* fmt, ...) {
+static void LOG_AND_ABORT(const char* file, int line, int type, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
   fprintf(stderr, "%s:%i %s: ", file, line, type == 1 ? "error" : "debug");
@@ -17,7 +17,6 @@ void LOG_AND_ABORT(const char* file, int line, int type, const char* fmt, ...) {
   va_end(args);
   abort();
 }
-
 
 #define glOKORDIE _glOkOrDie(__FILE__, __LINE__)
 static void _glOkOrDie(const char* file, int line) {
