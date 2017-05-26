@@ -10,6 +10,13 @@
 
 #define arrcount(a) (sizeof(a)/sizeof(*a))
 
+/* some static asserts */
+typedef char assert_char_is_8[sizeof(char)==1?1:-1];
+typedef char assert_short_is_16[sizeof(short)==2?1:-1];
+typedef char assert_int_is_32[sizeof(int)==4?1:-1];
+typedef char assert_long_is_64[sizeof(long)==8?1:-1];
+typedef char assert_ptr_is_long[sizeof(long)==sizeof(void*)?1:-1];
+
 typedef struct {
   char *curr, *end;
   char* mem;
