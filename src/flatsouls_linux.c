@@ -10,8 +10,10 @@
 #include <string.h>
 #include <stdio.h>
 #include "flatsouls_logging.h"
-#include <ft2build.h>
-#include FT_FREETYPE_H
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#define STBTT_STATIC
+#include "stb_truetype.h"
 
 
 #define sdl_try(stmt) ((stmt) && (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__,SDL_GetError()), abort(),0))
@@ -37,107 +39,8 @@ void load_image_texture_from_file(const char* filename, GLuint* result, int* w, 
   glOKORDIE;
 }
 
-static const char* ft_get_error_message(FT_Error err) {
-    #undef __FTERRORS_H__
-    #define FT_ERRORDEF( e, v, s )  case e: return s;
-    #define FT_ERROR_START_LIST     switch (err) {
-    #define FT_ERROR_END_LIST       }
-    #include FT_ERRORS_H
-    return "(Unknown error)";
-}
-void load_font_from_file(const char* filename, int height, GLuint* out_tex, Glyph *out_glyphs) {
-  #define START_CHAR 32
-  #define END_CHAR 127
-
-  // load font file
-  int err;
-  FT_Library ft;
-  FT_Face face;
-  int tex_w, tex_h;
-  if (err = FT_Init_FreeType(&ft)) LOG_AND_ABORT("Failed to init freetype: %s\n", ft_get_error_message(err));
-  if (err = FT_New_Face(ft, filename, 0, &face)) LOG_AND_ABORT("Failed to load font at %s: %s\n", filename, ft_get_error_message(err));
-  FT_Set_Pixel_Sizes(face, 0, height);
-
-  // pack glyphs
-  {
-    const int TEX_WIDTH = 512;
-    const int PADDING = 4;
-    int
-      x = 0,
-      y = 0,
-      row_height = 0,
-      i;
-    for (i = START_CHAR; i < END_CHAR; ++i) {
-      int w,h;
-      Glyph g;
-      FT_Load_Char(face, i, FT_LOAD_RENDER);
-      w = face->glyph->bitmap.width + 2*PADDING;
-      h = face->glyph->bitmap.height + 2*PADDING;
-      row_height = MAX(row_height, h);
-      if (x + w > TEX_WIDTH) {
-        if (x == 0) LOG_AND_ABORT("Glyph somehow wider than texture width (%i and %i)\n", w, TEX_WIDTH);
-        y += row_height;
-        row_height = 0;
-        x = 0;
-      }
-
-      g.x = face->glyph->bitmap_left/(float)height;
-      g.y = face->glyph->bitmap_top/(float)height;
-      g.w = face->glyph->bitmap.width/(float)height;
-      g.h = face->glyph->bitmap.height/(float)height;
-      g.advance = face->glyph->advance.x/(float)height/64.0f;
-      g.tx = x + PADDING;
-      g.ty = y + PADDING;
-      g.tw = w - 2*PADDING;
-      g.th = h - 2*PADDING;
-      out_glyphs[i] = g;
-    }
-    tex_w = next_pow2(TEX_WIDTH);
-    tex_h = next_pow2(y + row_height);
-    printf("Font texture dimensions: %u %u\n", maxW, maxH);
-  }
-
-  /* check if opengl support that size of texture */
-  {
-    GLint max_texture_size;
-    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
-    assert(max_texture_size >= tex_w && max_texture_size >= tex_h);
-    LOG(LOG_DEBUG, "Font texture size: %i %i Max texture size: %i\n", tex_w, tex_h, max_texture_size);
-  }
-
-  /* create texture */
-  glActiveTexture(GL_TEXTURE0);
-  glOKORDIE;
-  glGenTextures(1, out_tex);
-  glOKORDIE;
-  glBindTexture(GL_TEXTURE_2D, *out_tex);
-  glOKORDIE;
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glOKORDIE;
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, tex_w, tex_h, 0, GL_RED, GL_UNSIGNED_BYTE, 0);
-  glOKORDIE;
-
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
-  /* load glyphs into texture */
-  {
-    int i;
-    for (i = START_CHAR; i < END_CHAR; ++i) {
-      FT_Load_Char(face, i, FT_LOAD_RENDER);
-      glTexSubImage2D(GL_TEXTURE_2D, 0, out_glyphs[i].x, out_glyphs[i].y, out_glyphs[i].w, out_glyphs[i].h, GL_RED, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
-    }
-    glOKORDIE;
-  }
-
-  FT_Done_Face(face);
-  FT_Done_FreeType(ft);
-  return tex;
-
-  #undef START_CHAR
-  #undef END_CHAR
+void load_font_from_file(const char* filename, unsigned char* memory, GLuint* out_texture, Glyph *out_glyphs) {
+  
 }
 
 /* ======= Internals ======= */
@@ -230,6 +133,7 @@ int main(int argc, const char** argv) {
   {
     Funs dfuns;
     dfuns.load_image_texture_from_file = load_image_texture_from_file;
+    dfuns.load_font_from_file = load_font_from_file;
     init(memory, MEMORY_SIZE, dfuns);
   }
 

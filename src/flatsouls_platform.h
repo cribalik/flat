@@ -45,7 +45,7 @@ typedef struct {
 } Glyph;
 
 typedef void (*LoadImageTextureFromFile)(const char* filename, GLuint* result, int* w, int* h);
-typedef void (*LoadFontFromFile)(const char* filename, GLuint* out_texture, Glyph *out_glyphs);
+typedef void (*LoadFontFromFile)(const char* filename, unsigned char* memory, GLuint* out_texture, Glyph *out_glyphs);
 typedef struct {
   LoadImageTextureFromFile load_image_texture_from_file;
   LoadFontFromFile load_font_from_file;

@@ -178,7 +178,8 @@ static void render_clear(Renderer *r) {
   r->num_sprites = 0;
 }
 
-static LoadTextureFromFile load_texture_from_file;
+static LoadImageTextureFromFile load_image_texture_from_file;
+static LoadFontFromFile load_font_from_file;
 
 void init(void* mem, int mem_size, Funs dfuns) {
   Memory *m = mem;
@@ -186,7 +187,8 @@ void init(void* mem, int mem_size, Funs dfuns) {
   memset(m, 0, sizeof(Memory));
 
   /* Init function pointers */
-  load_texture_from_file = dfuns.load_texture_from_file;
+  load_image_texture_from_file = dfuns.load_image_texture_from_file;
+  load_font_from_file = dfuns.load_font_from_file;
 
   /* Init arena */
   {
@@ -222,7 +224,7 @@ void init(void* mem, int mem_size, Funs dfuns) {
     }
 
     /* Load images into textures */
-    load_texture_from_file("assets/spritesheet.png", &r->sprite_sheet.id, &r->sprite_sheet.size.x, &r->sprite_sheet.size.y);
+    load_image_texture_from_file("assets/spritesheet.png", &r->sprite_sheet.id, &r->sprite_sheet.size.x, &r->sprite_sheet.size.y);
 
     /* Compile shaders */
     r->sprite_shader = compile_shader("assets/shaders/sprite_vertex.glsl", "assets/shaders/sprite_fragment.glsl");
