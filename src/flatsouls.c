@@ -9,6 +9,9 @@
 #include "flatsouls_logging.h"
 
 #define arrcount(a) (sizeof(a)/sizeof(*a))
+#define isset(flags, flag) (((flags) & (flag)) != 0)
+void bitfield_set(unsigned char* arr, int i) {arr[i >> 3] |= 1 << i;}
+void bitfield_clear(unsigned char* arr, int i) {arr[i >> 3] &= ~(1 << i);}
 
 /* some static asserts */
 typedef char assert_char_is_8[sizeof(char)==1?1:-1];
@@ -113,6 +116,7 @@ static v3 v3_create(float x, float y, float z) {v3 r; r.x=x; r.y=y; r.z=z; retur
 static v4 v4_create(float x, float y, float z, float w) {v4 r; r.x=x; r.y=y; r.z=z; r.w=w; return r;}
 static v2 v3_xy(v3 v) {return v2_create(v.x, v.y);}
 static v2 v2_add(v2 v, float x, float y) {return v2_create(v.x+x, v.y+y);}
+static v2 v2_mult(v2 v, float x) {return v2_create(v.x*x, v.y*x);}
 
 static v2 v2i_to_v2(v2i v) {return v2_create(v.x, v.y);}
 
@@ -137,18 +141,27 @@ typedef struct {
 } Texture;
 
 typedef struct {
+  v2 pos, tpos;
+} SpriteVertex;
+
+typedef struct {
   v3 camera_pos;
   /* sprites */
   GLuint
-    sprites_vertex_array,
+    sprites_vertex_array, sprite_vertex_buffer,
     sprite_shader, sprite_view_location;
-  Texture sprite_sheet;
-  struct {v2 pos, tpos;} sprites[256];
+  Texture sprite_atlas;
+  SpriteVertex sprite_vertices[256];
   int num_sprites;
 
+  /* text */
   #define RENDERER_FIRST_CHAR 32
   #define RENDERER_LAST_CHAR 128
-  Texture font_atlas;
+  #define RENDERER_FONT_SIZE 32.0f
+  GLuint text_vertex_array, text_vertex_buffer;
+  SpriteVertex text_vertices[256];
+  int num_text_vertices;
+  Texture text_atlas;
   Glyph glyphs[RENDERER_LAST_CHAR - RENDERER_FIRST_CHAR];
 } Renderer;
 
@@ -160,22 +173,79 @@ typedef struct {
   char arena_data[128*1024*1024];
 } Memory;
 
-#define isset(flags, flag) (((flags) & (flag)) != 0)
 
-static void render_sprite(Renderer* r, v3 p, v2 size) {
+static float calc_string_width(Renderer *r, const char *str, float height) {
+  const char *c;
+  float result = 0.0f;
+  for (c = str; *c; ++c) {
+    result += r->glyphs[*c - RENDERER_FIRST_CHAR].advance * height / RENDERER_FONT_SIZE;
+  }
+  return result;
+}
+
+static void render_text(Renderer *r, const char *str, v2 pos, float height, int center) {
+  const char *c;
+  float scale = height / RENDERER_FONT_SIZE;
+  float ipw = 1.0f / r->text_atlas.size.x;
+  float iph = 1.0f / r->text_atlas.size.y;
+
+  if (r->num_text_vertices + strlen(str) >= arrcount(r->text_vertices))
+    return;
+
+  if (center) {
+    pos.x -= calc_string_width(r, str, height);
+    pos.y -= height/2.0f;
+  }
+
+  for (c = str; *c && r->num_text_vertices + 6 < (int)arrcount(r->text_vertices); ++c) {
+    Glyph g = r->glyphs[*c - RENDERER_FIRST_CHAR];
+    float x0 = pos.x + g.offset_x*scale;
+    float y0 = pos.y - g.offset_y*scale;
+    float x1 = pos.x + g.offset_x*scale + (g.s1-g.s0)*scale;
+    float y1 = pos.y - g.offset_y*scale - (g.t1-g.t0)*scale;
+    float s0 = (float) g.s0 * ipw;
+    float s1 = (float) g.s1 * ipw;
+    float t0 = (float) g.t0 * iph;
+    float t1 = (float) g.t1 * iph;
+
+    v4 a = v4_create(x0, y0, s0, t0);
+    v4 b = v4_create(x1, y0, s1, t0);
+    v4 c = v4_create(x0, y1, s0, t1);
+    v4 d = v4_create(x1, y1, s1, t1);
+
+    v4 *s = (v4*) r->text_vertices+r->num_text_vertices;
+
+    *s++ = a;
+    *s++ = b;
+    *s++ = c;
+    *s++ = c;
+    *s++ = b;
+    *s++ = d;
+    r->num_text_vertices += 6;
+    pos.x += g.advance*scale;
+  }
+}
+
+static void render_sprite(Renderer *r, v3 p, v2 size) {
   /* TODO: get x and y positions of sprite in sprite sheet */
   v2 p2 = v3_xy(p);
   p2 = v2_add(p2, -size.x/2, -size.y/2);
-  assert(r->sprite_sheet.id);
-  assert(r->num_sprites + 4 < (int)arrcount(r->sprites));
+  assert(r->sprite_atlas.id);
+  assert(r->num_sprites + 6 < (int)arrcount(r->sprite_vertices));
 
   {
-    int i = r->num_sprites;
-    *(v4*) &r->sprites[i++] = v4_create(p2.x, p2.y, 0, 1);
-    *(v4*) &r->sprites[i++] = v4_create(p2.x+size.x, p2.y, 1, 1);
-    *(v4*) &r->sprites[i++] = v4_create(p2.x, p2.y+size.y, 0, 0);
-    *(v4*) &r->sprites[i++] = v4_create(p2.x+size.x, p2.y+size.y, 1, 0);
-    r->num_sprites += 4;
+    v4 a = v4_create(p2.x, p2.y, 0, 1);
+    v4 b = v4_create(p2.x+size.x, p2.y, 1, 1);
+    v4 c = v4_create(p2.x, p2.y+size.y, 0, 0);
+    v4 d = v4_create(p2.x+size.x, p2.y+size.y, 1, 0);
+    v4 *p = (v4*) r->sprite_vertices+r->num_sprites;
+    *p++ = a;
+    *p++ = b;
+    *p++ = c;
+    *p++ = c;
+    *p++ = b;
+    *p++ = d;
+    r->num_sprites += 6;
   }
 }
 
@@ -184,6 +254,7 @@ static void render_clear(Renderer *r) {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   glOKORDIE;
   r->num_sprites = 0;
+  r->num_text_vertices = 0;
 }
 
 static LoadImageTextureFromFile load_image_texture_from_file;
@@ -210,49 +281,57 @@ void init(void* mem, int mem_size, Funs dfuns) {
     Renderer* r = &m->renderer;
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    /* Allocate sprite buffer */
-    {
-      const GLshort elements[] = {0, 2, 1, 2, 3, 1};
-      glGenVertexArrays(1, &r->sprites_vertex_array);
-      glBindVertexArray(r->sprites_vertex_array);
-      glOKORDIE;
-      {GLuint vertex_buffer;
-      glGenBuffers(1, &vertex_buffer);
-      glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-      glBufferData(GL_ARRAY_BUFFER, sizeof(r->sprites), 0, GL_DYNAMIC_DRAW);
-      glOKORDIE;}
-
-      glEnableVertexAttribArray(0);
-      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprites), (void*) 0);
-      glEnableVertexAttribArray(1);
-      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprites), (void*) (2*sizeof(float)));
-      glOKORDIE;
-
-      {GLuint element_buffer;
-      glGenBuffers(1, &element_buffer);
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer);
-      glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements, GL_STATIC_DRAW);
-      glOKORDIE;}
-    }
 
     /* Load images into textures */
-    load_image_texture_from_file("assets/spritesheet.png", &r->sprite_sheet.id, &r->sprite_sheet.size.x, &r->sprite_sheet.size.y);
+    load_image_texture_from_file("assets/spritesheet.png", &r->sprite_atlas.id, &r->sprite_atlas.size.x, &r->sprite_atlas.size.y);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     /* Create font texture and read in font from file */
     {
       const int w = 512, h = 512;
-      glGenTextures(1, &r->font_atlas.id);
-      glBindTexture(GL_TEXTURE_2D, r->font_atlas.id);
+      glGenTextures(1, &r->text_atlas.id);
+      glBindTexture(GL_TEXTURE_2D, r->text_atlas.id);
       glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, 0);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
       glOKORDIE;
-      r->font_atlas.size.x = w;
-      r->font_atlas.size.y = h;
+      r->text_atlas.size.x = w;
+      r->text_atlas.size.y = h;
 
-      load_font_from_file("assets/Roboto-Regular.ttf", r->font_atlas.id, r->font_atlas.size.x, r->font_atlas.size.y, r->glyphs);
-      glBindTexture(GL_TEXTURE_2D, r->font_atlas.id);
+      load_font_from_file("assets/Roboto-Regular.ttf", r->text_atlas.id, r->text_atlas.size.x, r->text_atlas.size.y, RENDERER_FIRST_CHAR, RENDERER_LAST_CHAR, RENDERER_FONT_SIZE, r->glyphs);
+      glBindTexture(GL_TEXTURE_2D, r->text_atlas.id);
       glGenerateMipmap(GL_TEXTURE_2D);
+    }
+
+    /* Allocate sprite buffer */
+    {
+      glGenVertexArrays(1, &r->sprites_vertex_array);
+      glBindVertexArray(r->sprites_vertex_array);
+      glOKORDIE;
+      glGenBuffers(1, &r->sprite_vertex_buffer);
+      glBindBuffer(GL_ARRAY_BUFFER, r->sprite_vertex_buffer);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(r->sprite_vertices), 0, GL_DYNAMIC_DRAW);
+      glOKORDIE;
+
+      glEnableVertexAttribArray(0);
+      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) 0);
+      glEnableVertexAttribArray(1);
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) (2*sizeof(float)));
+    }
+
+    /* Allocate text buffer */
+    {
+      glGenVertexArrays(1, &r->text_vertex_array);
+      glBindVertexArray(r->text_vertex_array);
+      glOKORDIE;
+      glGenBuffers(1, &r->text_vertex_buffer);
+      glBindBuffer(GL_ARRAY_BUFFER, r->text_vertex_buffer);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(r->text_vertices), 0, GL_DYNAMIC_DRAW);
+      glOKORDIE;
+
+      glEnableVertexAttribArray(0);
+      glEnableVertexAttribArray(1);
+      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) 0);
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) (2*sizeof(float)));
     }
 
     /* Compile shaders */
@@ -261,15 +340,12 @@ void init(void* mem, int mem_size, Funs dfuns) {
 
     /* Get/set uniforms */
     glUseProgram(r->sprite_shader);
-    glOKORDIE;
     glActiveTexture(GL_TEXTURE0);
-    glOKORDIE;
-    glBindTexture(GL_TEXTURE_2D, r->sprite_sheet.id);
-    glOKORDIE;
+    glBindTexture(GL_TEXTURE_2D, r->sprite_atlas.id);
     glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
-    glOKORDIE;
     r->sprite_view_location = glGetUniformLocation(r->sprite_shader, "u_view");
     glOKORDIE;
+
   }
 
   /* Create player */
@@ -330,7 +406,8 @@ int main_loop(void* mem, long ms, Input input) {
         e->pos.x -= dt*PLAYER_SPEED*input.is_down[BUTTON_LEFT];
         e->pos.y += dt*PLAYER_SPEED*input.is_down[BUTTON_UP];
         e->pos.y -= dt*PLAYER_SPEED*input.is_down[BUTTON_DOWN];
-        render_sprite(&m->renderer, e->pos, v2_create(0.3, 0.3));
+        render_sprite(&m->renderer, e->pos, v2_create(0.1, 0.1));
+        render_text(&m->renderer, entity_type_names[e->type], v2_add(v3_xy(e->pos), 0.05f, 0.15f), 0.1f, 1);
         print("%e\n", e);
       } break;
     }
@@ -341,20 +418,37 @@ int main_loop(void* mem, long ms, Input input) {
   render_sprite(&m->renderer, v3_create(0.3, -0.3, 0), v2_create(0.1, 0.1));
   render_sprite(&m->renderer, v3_create(-0.3, -0.3, 0), v2_create(0.1, 0.1));
 
-  /* draw sprites */
   {
     int i;
-    puts("********* Vertices *********");
+    puts("********* Sprite Vertices *********");
     for (i = 0; i < renderer->num_sprites; ++i) {
-      printf("%f %f\n", renderer->sprites[i].pos.x, renderer->sprites[i].pos.y);
+      printf("%f %f\n", renderer->sprite_vertices[i].pos.x, renderer->sprite_vertices[i].pos.y);
     }
-    puts("********* Vertices *********");
+    puts("********* Sprite Vertices *********");
+    puts("********* Text Vertices *********");
+    for (i = 0; i < renderer->num_text_vertices; ++i) {
+      printf("%f %f\n", renderer->text_vertices[i].pos.x, renderer->text_vertices[i].pos.y);
+    }
+    puts("********* Text Vertices *********");
   }
   glUseProgram(renderer->sprite_shader);
+
+  /* draw sprites */
   glBindVertexArray(renderer->sprites_vertex_array);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_sprites*sizeof(*renderer->sprites), renderer->sprites);
-  glDrawElementsInstanced(GL_LINE_STRIP, 6, GL_UNSIGNED_SHORT, 0, renderer->num_sprites/4);
+  glBindBuffer(GL_ARRAY_BUFFER, renderer->sprite_vertex_buffer);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_sprites*sizeof(*renderer->sprite_vertices), renderer->sprite_vertices);
+  glBindTexture(GL_TEXTURE_2D, renderer->sprite_atlas.id);
+  glDrawArrays(GL_TRIANGLES, 0, renderer->num_sprites);
   printf("num_sprites: %i\n", renderer->num_sprites);
+  glOKORDIE;
+
+  /* draw text */
+  glBindVertexArray(renderer->text_vertex_array);
+  glBindBuffer(GL_ARRAY_BUFFER, renderer->text_vertex_buffer);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_text_vertices*sizeof(*renderer->text_vertices), renderer->text_vertices);
+  glBindTexture(GL_TEXTURE_2D, renderer->text_atlas.id);
+  glDrawArrays(GL_TRIANGLES, 0, renderer->num_text_vertices);
+  printf("num_text_vertices: %i\n", renderer->num_text_vertices);
   glOKORDIE;
 
   return input.was_pressed[BUTTON_START];

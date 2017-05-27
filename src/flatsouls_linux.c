@@ -36,10 +36,8 @@ void load_image_texture_from_file(const char* filename, GLuint* result, int* w, 
   glOKORDIE;
 }
 
-void load_font_from_file(const char* filename, GLuint gl_texture, int tex_w, int tex_h, Glyph *out_glyphs) {
+void load_font_from_file(const char* filename, GLuint gl_texture, int tex_w, int tex_h, unsigned char first_char, unsigned char last_char, float height, Glyph *out_glyphs) {
   #define BUFFER_SIZE 1024*1024
-  #define FIRST_CHAR 32
-  #define LAST_CHAR 128
   unsigned char* ttf_mem;
   unsigned char* bitmap;
   FILE* f;
@@ -53,7 +51,7 @@ void load_font_from_file(const char* filename, GLuint gl_texture, int tex_w, int
   if (!f) LOG_AND_ABORT(LOG_ERROR, "Failed to open ttf file %s: %s\n", filename, strerror(errno));
   fread(ttf_mem, 1, BUFFER_SIZE, f);
 
-  res = stbtt_BakeFontBitmap(ttf_mem, 0, 32, bitmap, tex_w, tex_h, FIRST_CHAR, LAST_CHAR - FIRST_CHAR, (stbtt_bakedchar*) out_glyphs);
+  res = stbtt_BakeFontBitmap(ttf_mem, 0, height, bitmap, tex_w, tex_h, first_char, last_char - first_char, (stbtt_bakedchar*) out_glyphs);
   if (res <= 0) LOG_AND_ABORT(LOG_ERROR, "Failed to bake font: %i\n", res);
 
   glBindTexture(GL_TEXTURE_2D, gl_texture);
