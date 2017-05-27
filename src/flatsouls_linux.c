@@ -13,11 +13,8 @@
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
-#include "stb_truetype.h"
+#include "flatsouls_ttf.c"
 
-
-#define sdl_try(stmt) ((stmt) && (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__,SDL_GetError()), abort(),0))
-#define sdl_abort() (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__, SDL_GetError()), abort())
 
 /* ======= Externals ======= */
 
@@ -35,12 +32,38 @@ void load_image_texture_from_file(const char* filename, GLuint* result, int* w, 
   }
 
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   glOKORDIE;
 }
 
-void load_font_from_file(const char* filename, unsigned char* memory, GLuint* out_texture, Glyph *out_glyphs) {
-  
+void load_font_from_file(const char* filename, GLuint gl_texture, int tex_w, int tex_h, Glyph *out_glyphs) {
+  #define BUFFER_SIZE 1024*1024
+  #define FIRST_CHAR 32
+  #define LAST_CHAR 128
+  unsigned char* ttf_mem;
+  unsigned char* bitmap;
+  FILE* f;
+  int res;
+
+  ttf_mem = malloc(BUFFER_SIZE);
+  bitmap = malloc(tex_w * tex_h);
+  if (!ttf_mem || !bitmap) LOG_AND_ABORT(LOG_ERROR, "Failed to allocate memory for font: %s\n", strerror(errno));
+
+  f = fopen(filename, "rb");
+  if (!f) LOG_AND_ABORT(LOG_ERROR, "Failed to open ttf file %s: %s\n", filename, strerror(errno));
+  fread(ttf_mem, 1, BUFFER_SIZE, f);
+
+  res = stbtt_BakeFontBitmap(ttf_mem, 0, 32, bitmap, tex_w, tex_h, FIRST_CHAR, LAST_CHAR - FIRST_CHAR, (stbtt_bakedchar*) out_glyphs);
+  if (res <= 0) LOG_AND_ABORT(LOG_ERROR, "Failed to bake font: %i\n", res);
+
+  glBindTexture(GL_TEXTURE_2D, gl_texture);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, tex_w, tex_h, 0, GL_RED, GL_UNSIGNED_BYTE, bitmap);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glOKORDIE;
+
+  fclose(f);
+  free(ttf_mem);
+  free(bitmap);
 }
 
 /* ======= Internals ======= */
@@ -70,12 +93,15 @@ static int key_codes[NUM_BUTTONS] = {
   SDLK_RSHIFT
 };
 
+#define sdl_try(stmt) ((stmt) && (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__,SDL_GetError()), abort(),0))
+#define sdl_abort() (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__, SDL_GetError()), abort())
+
 int main(int argc, const char** argv) {
   int err;
 
-  /* dynamic linking to shared object */
-  int (*main_loop)(void*, Uint64, Input);
-  int (*init)(void*, int, Funs);
+  /* dynamic linking to game */
+  MainLoop main_loop;
+  Init init;
 
   /* SDL stuff */
   int screen_w = 800, screen_h = 600;

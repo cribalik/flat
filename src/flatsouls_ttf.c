@@ -1,4 +1,4 @@
-#ifdef STB_TRUETYPE_IMPLEMENTATION
+/* Slightly modified version of Sean Barrets stb_truetype */
    #ifndef stbtt_uint8
    typedef unsigned char   stbtt_uint8;
    typedef signed   char   stbtt_int8;
@@ -48,7 +48,6 @@
    #define STBTT_memcpy       memcpy
    #define STBTT_memset       memset
    #endif
-#endif
 
 #ifndef __STB_INCLUDE_STB_TRUETYPE_H__
 #define __STB_INCLUDE_STB_TRUETYPE_H__
@@ -342,7 +341,6 @@ enum {
 #endif
 
 
-#ifdef STB_TRUETYPE_IMPLEMENTATION
 
 #ifndef STBTT_MAX_OVERSAMPLE
 #define STBTT_MAX_OVERSAMPLE   8
@@ -3292,7 +3290,6 @@ STBTT_DEF int stbtt_CompareUTF8toUTF16_bigendian(const char *s1, int len1, const
 #pragma GCC diagnostic pop
 #endif
 
-#endif
 
 
 
@@ -3337,3 +3334,4 @@ ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ------------------------------------------------------------------------------
 */
+

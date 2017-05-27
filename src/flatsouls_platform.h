@@ -38,15 +38,18 @@ typedef struct {
 } Input;
 
 typedef struct {
-  float
-    x, y, w, h,
-    advance,
-    tx, ty, tw, th;
+  /* Position in image */
+  unsigned short s0, t0, s1, t1;
+  /* Glyph offset info */
+  float offset_x, offset_y, advance;
 } Glyph;
 
 typedef void (*LoadImageTextureFromFile)(const char* filename, GLuint* result, int* w, int* h);
-typedef void (*LoadFontFromFile)(const char* filename, unsigned char* memory, GLuint* out_texture, Glyph *out_glyphs);
+typedef void (*LoadFontFromFile)(const char* filename, GLuint gl_texture, int w, int h, Glyph *out_glyphs);
 typedef struct {
   LoadImageTextureFromFile load_image_texture_from_file;
   LoadFontFromFile load_font_from_file;
 } Funs;
+
+typedef int (*MainLoop)(void* memory, long ms, Input input);
+typedef int (*Init)(void* memory, int memory_size, Funs function_ptrs);
