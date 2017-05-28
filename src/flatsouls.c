@@ -117,6 +117,7 @@ static v4 v4_create(float x, float y, float z, float w) {v4 r; r.x=x; r.y=y; r.z
 static v2 v3_xy(v3 v) {return v2_create(v.x, v.y);}
 static v2 v2_add(v2 v, float x, float y) {return v2_create(v.x+x, v.y+y);}
 static v2 v2_mult(v2 v, float x) {return v2_create(v.x*x, v.y*x);}
+static v3 v3_add(v3 v, float x, float y, float z) {return v3_create(v.x+x, v.y+y, v.z+z);}
 
 static v2 v2i_to_v2(v2i v) {return v2_create(v.x, v.y);}
 
@@ -145,7 +146,6 @@ typedef struct {
 } SpriteVertex;
 
 typedef struct {
-  v3 camera_pos;
   /* sprites */
   GLuint
     sprites_vertex_array, sprite_vertex_buffer,
@@ -163,6 +163,10 @@ typedef struct {
   int num_text_vertices;
   Texture text_atlas;
   Glyph glyphs[RENDERER_LAST_CHAR - RENDERER_FIRST_CHAR];
+
+  /* camera */
+  #define RENDERER_CAMERA_HEIGHT 4
+  v3 camera_pos;
 } Renderer;
 
 typedef struct {
@@ -174,11 +178,11 @@ typedef struct {
 } Memory;
 
 
-static float calc_string_width(Renderer *r, const char *str, float height) {
+static float calc_string_width(Renderer *r, const char *str) {
   const char *c;
   float result = 0.0f;
   for (c = str; *c; ++c) {
-    result += r->glyphs[*c - RENDERER_FIRST_CHAR].advance * height / RENDERER_FONT_SIZE;
+    result += r->glyphs[*c - RENDERER_FIRST_CHAR].advance;
   }
   return result;
 }
@@ -193,8 +197,8 @@ static void render_text(Renderer *r, const char *str, v2 pos, float height, int 
     return;
 
   if (center) {
-    pos.x -= calc_string_width(r, str, height);
-    pos.y -= height/2.0f;
+    pos.x -= calc_string_width(r, str) * scale / 2;
+    /*pos.y -= height/2.0f;*/ /* Why isn't this working? */
   }
 
   for (c = str; *c && r->num_text_vertices + 6 < (int)arrcount(r->text_vertices); ++c) {
@@ -226,10 +230,10 @@ static void render_text(Renderer *r, const char *str, v2 pos, float height, int 
   }
 }
 
-static void render_sprite(Renderer *r, v3 p, v2 size) {
+static void render_sprite(Renderer *r, v3 p, v2 size, int center) {
   /* TODO: get x and y positions of sprite in sprite sheet */
   v2 p2 = v3_xy(p);
-  p2 = v2_add(p2, -size.x/2, -size.y/2);
+  if (center) p2 = v2_add(p2, -size.x/2, -size.y/2);
   assert(r->sprite_atlas.id);
   assert(r->num_sprites + 6 < (int)arrcount(r->sprite_vertices));
 
@@ -343,7 +347,7 @@ void init(void* mem, int mem_size, Funs dfuns) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, r->sprite_atlas.id);
     glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
-    r->sprite_view_location = glGetUniformLocation(r->sprite_shader, "u_view");
+    r->sprite_view_location = glGetUniformLocation(r->sprite_shader, "camera");
     glOKORDIE;
 
   }
@@ -353,8 +357,6 @@ void init(void* mem, int mem_size, Funs dfuns) {
     Entity e = {0};
     e.type = ENTITY_PLAYER;
     e.pos = v3_create(-0.5, -0.5, 0.0);
-    m->entities[m->num_entities++] = e;
-    e.pos = v3_create(0.5, 0.5, 0.0);
     m->entities[m->num_entities++] = e;
   }
 }
@@ -396,27 +398,28 @@ int main_loop(void* mem, long ms, Input input) {
   for (i = 0; i < m->num_entities; ++i) {
     Entity *e = m->entities + i;
     switch (e->type) {
-      case ENTITY_NULL:
+      case ENTITY_NULL: {
         fprintf(stderr, "Unknown entity type found\n");
         abort();
-        break;
+      } break;
       case ENTITY_PLAYER: {
         const float PLAYER_SPEED = 0.01;
         e->pos.x += dt*PLAYER_SPEED*input.is_down[BUTTON_RIGHT];
         e->pos.x -= dt*PLAYER_SPEED*input.is_down[BUTTON_LEFT];
         e->pos.y += dt*PLAYER_SPEED*input.is_down[BUTTON_UP];
         e->pos.y -= dt*PLAYER_SPEED*input.is_down[BUTTON_DOWN];
-        render_sprite(&m->renderer, e->pos, v2_create(0.1, 0.1));
-        render_text(&m->renderer, entity_type_names[e->type], v2_add(v3_xy(e->pos), 0.05f, 0.15f), 0.1f, 1);
+        render_sprite(&m->renderer, e->pos, v2_create(0.7f, 2.0f), 1);
+        render_text(&m->renderer, entity_type_names[e->type], v2_add(v3_xy(e->pos), 0.0f, 0.0f), 0.7f, 1);
+        m->renderer.camera_pos = v3_add(e->pos, 0,0,RENDERER_CAMERA_HEIGHT);
         print("%e\n", e);
       } break;
     }
   }
 
-  render_sprite(&m->renderer, v3_create(0.1, 0.1, 0), v2_create(0.1, 0.1));
-  render_sprite(&m->renderer, v3_create(-0.3, 0.3, 0), v2_create(0.1, 0.1));
-  render_sprite(&m->renderer, v3_create(0.3, -0.3, 0), v2_create(0.1, 0.1));
-  render_sprite(&m->renderer, v3_create(-0.3, -0.3, 0), v2_create(0.1, 0.1));
+  render_sprite(&m->renderer, v3_create(0.1, 0.1, 0), v2_create(1, 1), 1);
+  render_sprite(&m->renderer, v3_create(-0.3, 0.3, 0), v2_create(1, 1), 1);
+  render_sprite(&m->renderer, v3_create(0.3, -0.3, 0), v2_create(1, 1), 1);
+  render_sprite(&m->renderer, v3_create(-0.3, -0.3, 0), v2_create(1, 1), 1);
 
   {
     int i;
@@ -432,6 +435,9 @@ int main_loop(void* mem, long ms, Input input) {
     puts("********* Text Vertices *********");
   }
   glUseProgram(renderer->sprite_shader);
+
+  glUniform3f(renderer->sprite_view_location, renderer->camera_pos.x, renderer->camera_pos.y, renderer->camera_pos.z);
+  glOKORDIE;
 
   /* draw sprites */
   glBindVertexArray(renderer->sprites_vertex_array);
