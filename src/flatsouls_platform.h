@@ -3,11 +3,6 @@
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #include "GL/glext.h"
-#if 0
-#define GLFUN(name, proto) extern proto;
-#include "flatsouls_gl.incl"
-#undef GLFUN
-#endif
 
 typedef unsigned char u8;
 typedef unsigned short u16;

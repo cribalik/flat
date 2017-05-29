@@ -1,6 +1,6 @@
 #version 330 core
 
-layout(location = 0) in vec2 pos;
+layout(location = 0) in vec3 pos;
 layout(location = 1) in vec2 tpos;
 
 out vec2 f_tpos;
@@ -10,7 +10,7 @@ void main() {
   // calculate distance between position and camera
   const float VIEW_DISTANCE = 9;
   const float NEAR_DISTANCE = 0.3;
-  vec3 p = vec3(pos, 0);
+  vec3 p = pos;
   float NEAR = camera.z - NEAR_DISTANCE;
   float FAR = camera.z - NEAR_DISTANCE - VIEW_DISTANCE;
   float mult = NEAR / (camera.z - p.z);

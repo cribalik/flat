@@ -142,8 +142,12 @@ typedef struct {
 } Texture;
 
 typedef struct {
-  v2 pos, tpos;
+  v3 pos;
+  v2 tpos;
 } SpriteVertex;
+
+SpriteVertex spritevertex_create(v3 pos, v2 tpos) {SpriteVertex result; result.pos = pos; result.tpos = tpos; return result;}
+typedef SpriteVertex TextVertex;
 
 typedef struct {
   /* sprites */
@@ -159,7 +163,7 @@ typedef struct {
   #define RENDERER_LAST_CHAR 128
   #define RENDERER_FONT_SIZE 32.0f
   GLuint text_vertex_array, text_vertex_buffer;
-  SpriteVertex text_vertices[256];
+  TextVertex text_vertices[256];
   int num_text_vertices;
   Texture text_atlas;
   Glyph glyphs[RENDERER_LAST_CHAR - RENDERER_FIRST_CHAR];
@@ -187,7 +191,7 @@ static float calc_string_width(Renderer *r, const char *str) {
   return result;
 }
 
-static void render_text(Renderer *r, const char *str, v2 pos, float height, int center) {
+static void render_text(Renderer *r, const char *str, v3 pos, float height, int center) {
   const char *c;
   float scale = height / RENDERER_FONT_SIZE;
   float ipw = 1.0f / r->text_atlas.size.x;
@@ -203,28 +207,26 @@ static void render_text(Renderer *r, const char *str, v2 pos, float height, int 
 
   for (c = str; *c && r->num_text_vertices + 6 < (int)arrcount(r->text_vertices); ++c) {
     Glyph g = r->glyphs[*c - RENDERER_FIRST_CHAR];
-    float x0 = pos.x + g.offset_x*scale;
-    float y0 = pos.y - g.offset_y*scale;
-    float x1 = pos.x + g.offset_x*scale + (g.s1-g.s0)*scale;
-    float y1 = pos.y - g.offset_y*scale - (g.t1-g.t0)*scale;
-    float s0 = (float) g.s0 * ipw;
-    float s1 = (float) g.s1 * ipw;
-    float t0 = (float) g.t0 * iph;
-    float t1 = (float) g.t1 * iph;
+    v3 p = v3_add(pos, g.offset_x*scale, -g.offset_y*scale, 0);
+    float dx = (g.s1-g.s0)*scale;
+    float dy = -(g.t1-g.t0)*scale;
+    v3 a = p;
+    v3 b = v3_add(p, dx, 0, 0);
+    v3 c = v3_add(p, 0, dy, 0);
+    v3 d = v3_add(p, dx, dy, 0);
+    v2 ta = v2_create(g.s0 * ipw, g.t0 * iph);
+    v2 tb = v2_create(g.s1 * ipw, g.t0 * iph);
+    v2 tc = v2_create(g.s0 * ipw, g.t1 * iph);
+    v2 td = v2_create(g.s1 * ipw, g.t1 * iph);
 
-    v4 a = v4_create(x0, y0, s0, t0);
-    v4 b = v4_create(x1, y0, s1, t0);
-    v4 c = v4_create(x0, y1, s0, t1);
-    v4 d = v4_create(x1, y1, s1, t1);
+    SpriteVertex *v = r->text_vertices + r->num_text_vertices;
+    *v++ = spritevertex_create(a, ta);
+    *v++ = spritevertex_create(b, tb);
+    *v++ = spritevertex_create(c, tc);
+    *v++ = spritevertex_create(c, tc);
+    *v++ = spritevertex_create(b, tb);
+    *v++ = spritevertex_create(d, td);
 
-    v4 *s = (v4*) r->text_vertices+r->num_text_vertices;
-
-    *s++ = a;
-    *s++ = b;
-    *s++ = c;
-    *s++ = c;
-    *s++ = b;
-    *s++ = d;
     r->num_text_vertices += 6;
     pos.x += g.advance*scale;
   }
@@ -232,23 +234,26 @@ static void render_text(Renderer *r, const char *str, v2 pos, float height, int 
 
 static void render_sprite(Renderer *r, v3 p, v2 size, int center) {
   /* TODO: get x and y positions of sprite in sprite sheet */
-  v2 p2 = v3_xy(p);
-  if (center) p2 = v2_add(p2, -size.x/2, -size.y/2);
+  if (center) p = v3_add(p, -size.x/2, -size.y/2, 0.0f);
   assert(r->sprite_atlas.id);
   assert(r->num_sprites + 6 < (int)arrcount(r->sprite_vertices));
 
   {
-    v4 a = v4_create(p2.x, p2.y, 0, 1);
-    v4 b = v4_create(p2.x+size.x, p2.y, 1, 1);
-    v4 c = v4_create(p2.x, p2.y+size.y, 0, 0);
-    v4 d = v4_create(p2.x+size.x, p2.y+size.y, 1, 0);
-    v4 *p = (v4*) r->sprite_vertices+r->num_sprites;
-    *p++ = a;
-    *p++ = b;
-    *p++ = c;
-    *p++ = c;
-    *p++ = b;
-    *p++ = d;
+    v3 a = p;
+    v3 b = v3_add(p, size.x, 0,      0);
+    v3 c = v3_add(p, 0,      size.y, 0);
+    v3 d = v3_add(p, size.x, size.y, 0);
+    v2 ta = v2_create(0, 1);
+    v2 tb = v2_create(1, 1);
+    v2 tc = v2_create(0, 0);
+    v2 td = v2_create(1, 0);
+    SpriteVertex *v = r->sprite_vertices + r->num_sprites;
+    *v++ = spritevertex_create(a, ta);
+    *v++ = spritevertex_create(b, tb);
+    *v++ = spritevertex_create(c, tc);
+    *v++ = spritevertex_create(c, tc);
+    *v++ = spritevertex_create(b, tb);
+    *v++ = spritevertex_create(d, td);
     r->num_sprites += 6;
   }
 }
@@ -317,9 +322,9 @@ void init(void* mem, int mem_size, Funs dfuns) {
       glOKORDIE;
 
       glEnableVertexAttribArray(0);
-      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) 0);
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) 0);
       glEnableVertexAttribArray(1);
-      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) (2*sizeof(float)));
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) offsetof(SpriteVertex, tpos));
     }
 
     /* Allocate text buffer */
@@ -334,8 +339,8 @@ void init(void* mem, int mem_size, Funs dfuns) {
 
       glEnableVertexAttribArray(0);
       glEnableVertexAttribArray(1);
-      glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) 0);
-      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) (2*sizeof(float)));
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) 0);
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) offsetof(SpriteVertex, tpos));
     }
 
     /* Compile shaders */
@@ -377,6 +382,14 @@ void print(const char* fmt, ...) {
         Entity* e = va_arg(args, Entity*);
         printf("%s: x: %f y: %f z: %f\n", entity_type_names[e->type], e->pos.x, e->pos.y, e->pos.z);
       } break;
+      case 'i': {
+        int i = va_arg(args, int);
+        printf("%i", i);
+      }
+      case 'f': {
+        double f = va_arg(args, double);
+        printf("%f", f);
+      }
     }
   }
   va_end(args);
@@ -409,7 +422,7 @@ int main_loop(void* mem, long ms, Input input) {
         e->pos.y += dt*PLAYER_SPEED*input.is_down[BUTTON_UP];
         e->pos.y -= dt*PLAYER_SPEED*input.is_down[BUTTON_DOWN];
         render_sprite(&m->renderer, e->pos, v2_create(0.7f, 2.0f), 1);
-        render_text(&m->renderer, entity_type_names[e->type], v2_add(v3_xy(e->pos), 0.0f, 0.0f), 0.7f, 1);
+        render_text(&m->renderer, entity_type_names[e->type], e->pos, 0.1f, 1);
         m->renderer.camera_pos = v3_add(e->pos, 0,0,RENDERER_CAMERA_HEIGHT);
         print("%e\n", e);
       } break;
