@@ -8,17 +8,19 @@
 #include <math.h>
 #include "flatsouls_logging.h"
 
-#define arrcount(a) (sizeof(a)/sizeof(*a))
+#define STATIC_ASSERT(expr, name) typedef char static_assert_##name[expr?1:-1]
+
+#define ARRCOUNT(a) (sizeof(a)/sizeof(*a))
 #define isset(flags, flag) (((flags) & (flag)) != 0)
 void bitfield_set(unsigned char* arr, int i) {arr[i >> 3] |= 1 << i;}
 void bitfield_clear(unsigned char* arr, int i) {arr[i >> 3] &= ~(1 << i);}
 
 /* some static asserts */
-typedef char assert_char_is_8[sizeof(char)==1?1:-1];
-typedef char assert_short_is_16[sizeof(short)==2?1:-1];
-typedef char assert_int_is_32[sizeof(int)==4?1:-1];
-typedef char assert_long_is_64[sizeof(long)==8?1:-1];
-typedef char assert_ptr_is_long[sizeof(long)==sizeof(void*)?1:-1];
+STATIC_ASSERT(sizeof(char) == 1, char_is_8);
+STATIC_ASSERT(sizeof(short) == 2, short_is_16);
+STATIC_ASSERT(sizeof(int) == 4, int_is_32);
+STATIC_ASSERT(sizeof(long) == 8, long_is_64);
+STATIC_ASSERT(sizeof(long) == sizeof(void*), ptr_is_long);
 
 typedef struct {
   char *curr, *end;
@@ -95,6 +97,9 @@ static GLuint compile_shader(const char* vertex_filename, const char* fragment_f
   return result;
 }
 
+/* @math */
+int equalf(float a, float b) {return abs(a-b) < 0.00001;}
+
 typedef struct {
   float x,y,z,w;
 } v4;
@@ -116,24 +121,35 @@ static v3 v3_create(float x, float y, float z) {v3 r; r.x=x; r.y=y; r.z=z; retur
 static v4 v4_create(float x, float y, float z, float w) {v4 r; r.x=x; r.y=y; r.z=z; r.w=w; return r;}
 static v2 v3_xy(v3 v) {return v2_create(v.x, v.y);}
 static v2 v2_add(v2 v, float x, float y) {return v2_create(v.x+x, v.y+y);}
+static int v2_equal(v2 a, v2 b) {return equalf(a.x, b.x) && equalf(a.y, b.y);}
 static v2 v2_mult(v2 v, float x) {return v2_create(v.x*x, v.y*x);}
 static v3 v3_add(v3 v, float x, float y, float z) {return v3_create(v.x+x, v.y+y, v.z+z);}
 
 static v2 v2i_to_v2(v2i v) {return v2_create(v.x, v.y);}
 
 typedef enum {
-  ENTITY_NULL,
-  ENTITY_PLAYER
+  ENTITY_TYPE_NULL,
+  ENTITY_TYPE_PLAYER,
+  ENTITY_TYPE_MONSTER,
+  ENTITY_TYPE_DERPER,
+
+  ENTITY_TYPE_COUNT
 } EntityType;
 
 static const char* entity_type_names[] = {
   "Null",
-  "Player"
+  "Player",
+  "Monster",
+  "Derper"
 };
+STATIC_ASSERT(ARRCOUNT(entity_type_names) == ENTITY_TYPE_COUNT, all_entity_names_entered);
 
 typedef struct {
   EntityType type;
   v3 pos;
+
+  /* Monster stuff */
+  v2 target;
 } Entity;
 
 typedef struct {
@@ -197,7 +213,7 @@ static void render_text(Renderer *r, const char *str, v3 pos, float height, int 
   float ipw = 1.0f / r->text_atlas.size.x;
   float iph = 1.0f / r->text_atlas.size.y;
 
-  if (r->num_text_vertices + strlen(str) >= arrcount(r->text_vertices))
+  if (r->num_text_vertices + strlen(str) >= ARRCOUNT(r->text_vertices))
     return;
 
   if (center) {
@@ -205,7 +221,7 @@ static void render_text(Renderer *r, const char *str, v3 pos, float height, int 
     /*pos.y -= height/2.0f;*/ /* Why isn't this working? */
   }
 
-  for (c = str; *c && r->num_text_vertices + 6 < (int)arrcount(r->text_vertices); ++c) {
+  for (c = str; *c && r->num_text_vertices + 6 < (int)ARRCOUNT(r->text_vertices); ++c) {
     Glyph g = r->glyphs[*c - RENDERER_FIRST_CHAR];
     v3 p = v3_add(pos, g.offset_x*scale, -g.offset_y*scale, 0);
     float dx = (g.s1-g.s0)*scale;
@@ -236,7 +252,7 @@ static void render_sprite(Renderer *r, v3 p, v2 size, int center) {
   /* TODO: get x and y positions of sprite in sprite sheet */
   if (center) p = v3_add(p, -size.x/2, -size.y/2, 0.0f);
   assert(r->sprite_atlas.id);
-  assert(r->num_sprites + 6 < (int)arrcount(r->sprite_vertices));
+  assert(r->num_sprites + 6 < (int)ARRCOUNT(r->sprite_vertices));
 
   {
     v3 a = p;
@@ -360,7 +376,7 @@ void init(void* mem, int mem_size, Funs dfuns) {
   /* Create player */
   {
     Entity e = {0};
-    e.type = ENTITY_PLAYER;
+    e.type = ENTITY_TYPE_PLAYER;
     e.pos = v3_create(-0.5, -0.5, 0.0);
     m->entities[m->num_entities++] = e;
   }
@@ -411,11 +427,12 @@ int main_loop(void* mem, long ms, Input input) {
   for (i = 0; i < m->num_entities; ++i) {
     Entity *e = m->entities + i;
     switch (e->type) {
-      case ENTITY_NULL: {
+      case ENTITY_TYPE_COUNT:
+      case ENTITY_TYPE_NULL:
         fprintf(stderr, "Unknown entity type found\n");
         abort();
-      } break;
-      case ENTITY_PLAYER: {
+        break;
+      case ENTITY_TYPE_PLAYER: {
         const float PLAYER_SPEED = 0.01;
         e->pos.x += dt*PLAYER_SPEED*input.is_down[BUTTON_RIGHT];
         e->pos.x -= dt*PLAYER_SPEED*input.is_down[BUTTON_LEFT];
@@ -426,6 +443,8 @@ int main_loop(void* mem, long ms, Input input) {
         m->renderer.camera_pos = v3_add(e->pos, 0,0,RENDERER_CAMERA_HEIGHT);
         print("%e\n", e);
       } break;
+      case ENTITY_TYPE_MONSTER: break;
+      case ENTITY_TYPE_DERPER: break;
     }
   }
 

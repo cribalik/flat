@@ -36,3 +36,5 @@ build
 # Sublime
 *.sublime-workspace
 
+assets
+!assets/shaders
