@@ -78,7 +78,8 @@ static Button key_to_button(Sint32 key) {
   return 0;
 }
 
-static int key_codes[NUM_BUTTONS] = {
+static int key_codes[] = {
+  0,
   SDLK_t,
   SDLK_y,
   SDLK_r,
@@ -90,6 +91,7 @@ static int key_codes[NUM_BUTTONS] = {
   SDLK_RETURN,
   SDLK_RSHIFT
 };
+STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
 
 #define sdl_try(stmt) ((stmt) && (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__,SDL_GetError()), abort(),0))
 #define sdl_abort() (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__, SDL_GetError()), abort())
@@ -174,7 +176,7 @@ int main(int argc, const char** argv) {
           case SDL_KEYDOWN: {
             int i;
             if (event.key.repeat) break;
-            for (i = 0; i < NUM_BUTTONS; ++i) {
+            foreach_button(i) {
               if (event.key.keysym.sym == key_codes[i]) {
                 input.was_pressed[i] = !input.is_down[i];
                 input.is_down[i] = 1;
@@ -185,7 +187,7 @@ int main(int argc, const char** argv) {
           case SDL_KEYUP: {
             int i;
             if (event.key.repeat) break;
-            for (i = 0; i < NUM_BUTTONS; ++i) {
+            foreach_button(i) {
               if (event.key.keysym.sym == key_codes[i]) {
                 input.is_down[i] = 0;
                 break;

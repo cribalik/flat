@@ -8,20 +8,6 @@
 #include <math.h>
 #include "flatsouls_logging.h"
 
-#define STATIC_ASSERT(expr, name) typedef char static_assert_##name[expr?1:-1]
-
-#define ARRCOUNT(a) (sizeof(a)/sizeof(*a))
-#define isset(flags, flag) (((flags) & (flag)) != 0)
-void bitfield_set(unsigned char* arr, int i) {arr[i >> 3] |= 1 << i;}
-void bitfield_clear(unsigned char* arr, int i) {arr[i >> 3] &= ~(1 << i);}
-
-/* some static asserts */
-STATIC_ASSERT(sizeof(char) == 1, char_is_8);
-STATIC_ASSERT(sizeof(short) == 2, short_is_16);
-STATIC_ASSERT(sizeof(int) == 4, int_is_32);
-STATIC_ASSERT(sizeof(long) == 8, long_is_64);
-STATIC_ASSERT(sizeof(long) == sizeof(void*), ptr_is_long);
-
 typedef struct {
   char *curr, *end;
   char* mem;
@@ -132,7 +118,6 @@ typedef enum {
   ENTITY_TYPE_PLAYER,
   ENTITY_TYPE_MONSTER,
   ENTITY_TYPE_DERPER,
-
   ENTITY_TYPE_COUNT
 } EntityType;
 
@@ -142,7 +127,7 @@ static const char* entity_type_names[] = {
   "Monster",
   "Derper"
 };
-STATIC_ASSERT(ARRCOUNT(entity_type_names) == ENTITY_TYPE_COUNT, all_entity_names_entered);
+STATIC_ASSERT(ARRAY_LEN(entity_type_names) == ENTITY_TYPE_COUNT, all_entity_names_entered);
 
 typedef struct {
   EntityType type;
@@ -185,7 +170,7 @@ typedef struct {
   Glyph glyphs[RENDERER_LAST_CHAR - RENDERER_FIRST_CHAR];
 
   /* camera */
-  #define RENDERER_CAMERA_HEIGHT 4
+  #define RENDERER_CAMERA_HEIGHT 2
   v3 camera_pos;
 } Renderer;
 
@@ -197,45 +182,51 @@ typedef struct {
   char arena_data[128*1024*1024];
 } Memory;
 
+static Glyph glyph_get(Renderer *r, char c) {
+  return r->glyphs[c - RENDERER_FIRST_CHAR];
+}
 
 static float calc_string_width(Renderer *r, const char *str) {
-  const char *c;
   float result = 0.0f;
-  for (c = str; *c; ++c) {
-    result += r->glyphs[*c - RENDERER_FIRST_CHAR].advance;
-  }
+
+  for (; *str; ++str)
+    result += glyph_get(r, *str).advance;
   return result;
 }
 
 static void render_text(Renderer *r, const char *str, v3 pos, float height, int center) {
-  const char *c;
-  float scale = height / RENDERER_FONT_SIZE;
-  float ipw = 1.0f / r->text_atlas.size.x;
-  float iph = 1.0f / r->text_atlas.size.y;
+  Glyph g;
+  float dx,dy, scale, ipw,iph;
+  v3 p, a,b,c,d;
+  v2 ta,tb,tc,td;
+  SpriteVertex *v;
 
-  if (r->num_text_vertices + strlen(str) >= ARRCOUNT(r->text_vertices))
-    return;
+  scale = height / RENDERER_FONT_SIZE;
+  ipw = 1.0f / r->text_atlas.size.x;
+  iph = 1.0f / r->text_atlas.size.y;
+
+  if (r->num_text_vertices + strlen(str) >= ARRAY_LEN(r->text_vertices)) return;
 
   if (center) {
     pos.x -= calc_string_width(r, str) * scale / 2;
     /*pos.y -= height/2.0f;*/ /* Why isn't this working? */
   }
 
-  for (c = str; *c && r->num_text_vertices + 6 < (int)ARRCOUNT(r->text_vertices); ++c) {
-    Glyph g = r->glyphs[*c - RENDERER_FIRST_CHAR];
-    v3 p = v3_add(pos, g.offset_x*scale, -g.offset_y*scale, 0);
-    float dx = (g.s1-g.s0)*scale;
-    float dy = -(g.t1-g.t0)*scale;
-    v3 a = p;
-    v3 b = v3_add(p, dx, 0, 0);
-    v3 c = v3_add(p, 0, dy, 0);
-    v3 d = v3_add(p, dx, dy, 0);
-    v2 ta = v2_create(g.s0 * ipw, g.t0 * iph);
-    v2 tb = v2_create(g.s1 * ipw, g.t0 * iph);
-    v2 tc = v2_create(g.s0 * ipw, g.t1 * iph);
-    v2 td = v2_create(g.s1 * ipw, g.t1 * iph);
+  for (; *str && r->num_text_vertices + 6 < (int)ARRAY_LEN(r->text_vertices); ++str) {
+    g = glyph_get(r, *str);
+    p = v3_add(pos, g.offset_x*scale, -g.offset_y*scale, 0);
+    dx = (g.s1-g.s0)*scale;
+    dy = -(g.t1-g.t0)*scale;
+    a = p;
+    b = v3_add(p, dx, 0, 0);
+    c = v3_add(p, 0, dy, 0);
+    d = v3_add(p, dx, dy, 0);
+    ta = v2_create(g.s0 * ipw, g.t0 * iph);
+    tb = v2_create(g.s1 * ipw, g.t0 * iph);
+    tc = v2_create(g.s0 * ipw, g.t1 * iph);
+    td = v2_create(g.s1 * ipw, g.t1 * iph);
+    v = r->text_vertices + r->num_text_vertices;
 
-    SpriteVertex *v = r->text_vertices + r->num_text_vertices;
     *v++ = spritevertex_create(a, ta);
     *v++ = spritevertex_create(b, tb);
     *v++ = spritevertex_create(c, tc);
@@ -250,28 +241,30 @@ static void render_text(Renderer *r, const char *str, v3 pos, float height, int 
 
 static void render_sprite(Renderer *r, v3 p, v2 size, int center) {
   /* TODO: get x and y positions of sprite in sprite sheet */
+  v3 a,b,c,d;
+  v2 ta,tb,tc,td;
+  SpriteVertex *v;
+
   if (center) p = v3_add(p, -size.x/2, -size.y/2, 0.0f);
   assert(r->sprite_atlas.id);
-  assert(r->num_sprites + 6 < (int)ARRCOUNT(r->sprite_vertices));
+  assert(r->num_sprites + 6 < (int)ARRAY_LEN(r->sprite_vertices));
 
-  {
-    v3 a = p;
-    v3 b = v3_add(p, size.x, 0,      0);
-    v3 c = v3_add(p, 0,      size.y, 0);
-    v3 d = v3_add(p, size.x, size.y, 0);
-    v2 ta = v2_create(0, 1);
-    v2 tb = v2_create(1, 1);
-    v2 tc = v2_create(0, 0);
-    v2 td = v2_create(1, 0);
-    SpriteVertex *v = r->sprite_vertices + r->num_sprites;
-    *v++ = spritevertex_create(a, ta);
-    *v++ = spritevertex_create(b, tb);
-    *v++ = spritevertex_create(c, tc);
-    *v++ = spritevertex_create(c, tc);
-    *v++ = spritevertex_create(b, tb);
-    *v++ = spritevertex_create(d, td);
-    r->num_sprites += 6;
-  }
+  a = p;
+  b = v3_add(p, size.x, 0,      0);
+  c = v3_add(p, 0,      size.y, 0);
+  d = v3_add(p, size.x, size.y, 0);
+  ta = v2_create(0, 1);
+  tb = v2_create(1, 1);
+  tc = v2_create(0, 0);
+  td = v2_create(1, 0);
+  v = r->sprite_vertices + r->num_sprites;
+  *v++ = spritevertex_create(a, ta);
+  *v++ = spritevertex_create(b, tb);
+  *v++ = spritevertex_create(c, tc);
+  *v++ = spritevertex_create(c, tc);
+  *v++ = spritevertex_create(b, tb);
+  *v++ = spritevertex_create(d, td);
+  r->num_sprites += 6;
 }
 
 static void render_clear(Renderer *r) {
@@ -377,7 +370,7 @@ void init(void* mem, int mem_size, Funs dfuns) {
   {
     Entity e = {0};
     e.type = ENTITY_TYPE_PLAYER;
-    e.pos = v3_create(-0.5, -0.5, 0.0);
+    e.pos = v3_create(0, 0, 0);
     m->entities[m->num_entities++] = e;
   }
 }
@@ -418,7 +411,6 @@ int main_loop(void* mem, long ms, Input input) {
   float dt = (ms - last_ms) * 0.06;
   int i;
   last_ms = ms;
-  printf("%li %f\n", ms ,dt);
 
   /* clear */
   render_clear(renderer);
@@ -438,34 +430,35 @@ int main_loop(void* mem, long ms, Input input) {
         e->pos.x -= dt*PLAYER_SPEED*input.is_down[BUTTON_LEFT];
         e->pos.y += dt*PLAYER_SPEED*input.is_down[BUTTON_UP];
         e->pos.y -= dt*PLAYER_SPEED*input.is_down[BUTTON_DOWN];
-        render_sprite(&m->renderer, e->pos, v2_create(0.7f, 2.0f), 1);
+        render_sprite(&m->renderer, e->pos, v2_create(1, 1), 1);
         render_text(&m->renderer, entity_type_names[e->type], e->pos, 0.1f, 1);
-        m->renderer.camera_pos = v3_add(e->pos, 0,0,RENDERER_CAMERA_HEIGHT);
-        print("%e\n", e);
+        m->renderer.camera_pos = v3_add(e->pos, 0, 0, RENDERER_CAMERA_HEIGHT);
       } break;
       case ENTITY_TYPE_MONSTER: break;
       case ENTITY_TYPE_DERPER: break;
     }
   }
 
-  render_sprite(&m->renderer, v3_create(0.1, 0.1, 0), v2_create(1, 1), 1);
-  render_sprite(&m->renderer, v3_create(-0.3, 0.3, 0), v2_create(1, 1), 1);
-  render_sprite(&m->renderer, v3_create(0.3, -0.3, 0), v2_create(1, 1), 1);
-  render_sprite(&m->renderer, v3_create(-0.3, -0.3, 0), v2_create(1, 1), 1);
+  render_sprite(&m->renderer, v3_create(0.1, 0.1, -1), v2_create(1, 1), 1);
+  render_sprite(&m->renderer, v3_create(-0.3, 0.3, -1), v2_create(1, 1), 1);
+  render_sprite(&m->renderer, v3_create(0.3, -0.3, -1), v2_create(1, 1), 1);
+  render_sprite(&m->renderer, v3_create(-0.3, -0.3, -1), v2_create(1, 1), 1);
 
+  #if 1
   {
     int i;
     puts("********* Sprite Vertices *********");
     for (i = 0; i < renderer->num_sprites; ++i) {
-      printf("%f %f\n", renderer->sprite_vertices[i].pos.x, renderer->sprite_vertices[i].pos.y);
+      printf("%f %f %f\n", renderer->sprite_vertices[i].pos.x, renderer->sprite_vertices[i].pos.y, renderer->sprite_vertices[i].pos.z);
     }
     puts("********* Sprite Vertices *********");
     puts("********* Text Vertices *********");
     for (i = 0; i < renderer->num_text_vertices; ++i) {
-      printf("%f %f\n", renderer->text_vertices[i].pos.x, renderer->text_vertices[i].pos.y);
+      printf("%f %f %f\n", renderer->text_vertices[i].pos.x, renderer->text_vertices[i].pos.y, renderer->text_vertices[i].pos.z);
     }
     puts("********* Text Vertices *********");
   }
+  #endif
   glUseProgram(renderer->sprite_shader);
 
   glUniform3f(renderer->sprite_view_location, renderer->camera_pos.x, renderer->camera_pos.y, renderer->camera_pos.z);
@@ -477,7 +470,6 @@ int main_loop(void* mem, long ms, Input input) {
   glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_sprites*sizeof(*renderer->sprite_vertices), renderer->sprite_vertices);
   glBindTexture(GL_TEXTURE_2D, renderer->sprite_atlas.id);
   glDrawArrays(GL_TRIANGLES, 0, renderer->num_sprites);
-  printf("num_sprites: %i\n", renderer->num_sprites);
   glOKORDIE;
 
   /* draw text */
@@ -486,7 +478,6 @@ int main_loop(void* mem, long ms, Input input) {
   glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_text_vertices*sizeof(*renderer->text_vertices), renderer->text_vertices);
   glBindTexture(GL_TEXTURE_2D, renderer->text_atlas.id);
   glDrawArrays(GL_TRIANGLES, 0, renderer->num_text_vertices);
-  printf("num_text_vertices: %i\n", renderer->num_text_vertices);
   glOKORDIE;
 
   return input.was_pressed[BUTTON_START];

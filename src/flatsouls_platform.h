@@ -4,6 +4,8 @@
 #include <GL/gl.h>
 #include "GL/glext.h"
 
+#define STATIC_ASSERT(expr, name) typedef char static_assert_##name[expr?1:-1]
+
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
@@ -13,30 +15,38 @@ typedef short i16;
 typedef int i32;
 typedef long i64;
 
+STATIC_ASSERT(sizeof(u8) == 1, u8_is_8_bits);
+STATIC_ASSERT(sizeof(u16) == 2, u16_is_16_bits);
+STATIC_ASSERT(sizeof(u32) == 4, u32_is_32_bits);
+STATIC_ASSERT(sizeof(u64) == 8, u64_is_64_bits);
+STATIC_ASSERT(sizeof(long) == sizeof(void*), ptr_is_long);
+
+#define ARRAY_LEN(a) (sizeof(a)/sizeof(*a))
+
 typedef enum {
-  BUTTON_A =      0,
-  BUTTON_B =      1,
-  BUTTON_X =      2,
-  BUTTON_Y =      3,
-  BUTTON_UP =     4,
-  BUTTON_DOWN =   5,
-  BUTTON_LEFT =   6,
-  BUTTON_RIGHT =  7,
-  BUTTON_START =  8,
-  BUTTON_SELECT = 9
+  BUTTON_NULL,
+  BUTTON_A,
+  BUTTON_B,
+  BUTTON_X,
+  BUTTON_Y,
+  BUTTON_UP,
+  BUTTON_DOWN,
+  BUTTON_LEFT,
+  BUTTON_RIGHT,
+  BUTTON_START,
+  BUTTON_SELECT,
+  BUTTON_COUNT
 } Button;
-#define NUM_BUTTONS 10
+#define foreach_button(i) for (i = 1; i < BUTTON_COUNT; ++i)
 
 typedef struct {
-  char was_pressed[NUM_BUTTONS], is_down[NUM_BUTTONS];
+  char was_pressed[BUTTON_COUNT], is_down[BUTTON_COUNT];
   float lx, ly, rx, ry;
 } Input;
 
 typedef struct {
-  /* Position in image */
-  unsigned short s0, t0, s1, t1;
-  /* Glyph offset info */
-  float offset_x, offset_y, advance;
+  unsigned short s0, t0, s1, t1; /* Position in image */
+  float offset_x, offset_y, advance; /* Glyph offset info */
 } Glyph;
 
 typedef void (*LoadImageTextureFromFile)(const char* filename, GLuint* result, int* w, int* h);
