@@ -4,4 +4,4 @@
 #Low
  * Replace SOIL
  * Replace SDL
- * Remove all mallocs
+ * Don't use libc

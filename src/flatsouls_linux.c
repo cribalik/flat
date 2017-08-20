@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200112L
-#include "flatsouls_platform.h"
+#include "flatsouls_utils.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <SDL2/SDL_opengl_glext.h>
@@ -9,7 +9,6 @@
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
-#include "flatsouls_logging.h"
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
@@ -21,19 +20,19 @@
 void load_image_texture_from_file(const char* filename, GLuint* result, int* w, int* h) {
   glGenTextures(1, result);
   glBindTexture(GL_TEXTURE_2D, *result);
-  glOKORDIE;
+  gl_ok_or_die;
 
   {
     unsigned char* image = SOIL_load_image(filename, w, h, 0, SOIL_LOAD_RGBA);
-    if (!image) LOG_AND_ABORT(LOG_ERROR, "Failed to load image %s: %s\n", filename, strerror(errno));
+    if (!image) die("Failed to load image %s: %s\n", filename, strerror(errno));
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, *w, *h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
     SOIL_free_image_data(image);
-    glOKORDIE;
+    gl_ok_or_die;
   }
 
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-  glOKORDIE;
+  gl_ok_or_die;
 }
 
 void load_font_from_file(const char* filename, GLuint gl_texture, int tex_w, int tex_h, unsigned char first_char, unsigned char last_char, float height, Glyph *out_glyphs) {
@@ -45,19 +44,19 @@ void load_font_from_file(const char* filename, GLuint gl_texture, int tex_w, int
 
   ttf_mem = malloc(BUFFER_SIZE);
   bitmap = malloc(tex_w * tex_h);
-  if (!ttf_mem || !bitmap) LOG_AND_ABORT(LOG_ERROR, "Failed to allocate memory for font: %s\n", strerror(errno));
+  if (!ttf_mem || !bitmap) die("Failed to allocate memory for font: %s\n", strerror(errno));
 
   f = fopen(filename, "rb");
-  if (!f) LOG_AND_ABORT(LOG_ERROR, "Failed to open ttf file %s: %s\n", filename, strerror(errno));
+  if (!f) die("Failed to open ttf file %s: %s\n", filename, strerror(errno));
   fread(ttf_mem, 1, BUFFER_SIZE, f);
 
   res = stbtt_BakeFontBitmap(ttf_mem, 0, height, bitmap, tex_w, tex_h, first_char, last_char - first_char, (stbtt_bakedchar*) out_glyphs);
-  if (res <= 0) LOG_AND_ABORT(LOG_ERROR, "Failed to bake font: %i\n", res);
+  if (res <= 0) die("Failed to bake font: %i\n", res);
 
   glBindTexture(GL_TEXTURE_2D, gl_texture);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, tex_w, tex_h, 0, GL_RED, GL_UNSIGNED_BYTE, bitmap);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glOKORDIE;
+  gl_ok_or_die;
 
   fclose(f);
   free(ttf_mem);
@@ -116,6 +115,7 @@ int main(int argc, const char** argv) {
   /* unused */
   (void)argc, (void)argv;
 
+  /* Fix for some builds of SDL 2.0.4, see https://bugs.gentoo.org/show_bug.cgi?id=610326 */
   setenv("XMODIFIERS", "@im=none", 1);
 
   /* init SDL */
@@ -146,7 +146,7 @@ int main(int argc, const char** argv) {
 
   glViewport(0, 0, screen_w, screen_h);
 
-  /* load main loop */
+  /* load game loop */
   {
     void* obj = SDL_LoadObject("flatsouls.so");
     if (!obj) sdl_abort();
@@ -156,6 +156,7 @@ int main(int argc, const char** argv) {
     if (!init) sdl_abort();
   }
 
+  /* call init */
   {
     Funs dfuns;
     dfuns.load_image_texture_from_file = load_image_texture_from_file;
@@ -176,7 +177,7 @@ int main(int argc, const char** argv) {
           case SDL_KEYDOWN: {
             int i;
             if (event.key.repeat) break;
-            foreach_button(i) {
+            FOREACH_ENUM(i, BUTTON) {
               if (event.key.keysym.sym == key_codes[i]) {
                 input.was_pressed[i] = !input.is_down[i];
                 input.is_down[i] = 1;
@@ -187,7 +188,7 @@ int main(int argc, const char** argv) {
           case SDL_KEYUP: {
             int i;
             if (event.key.repeat) break;
-            foreach_button(i) {
+            FOREACH_ENUM(i, BUTTON) {
               if (event.key.keysym.sym == key_codes[i]) {
                 input.is_down[i] = 0;
                 break;

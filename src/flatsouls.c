@@ -1,4 +1,4 @@
-#include "flatsouls_platform.h"
+#include "flatsouls_utils.h"
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <math.h>
-#include "flatsouls_logging.h"
 
 typedef struct {
   char *curr, *end;
@@ -31,15 +30,16 @@ static GLuint compile_shader(const char* vertex_filename, const char* fragment_f
   char shader_src[2048];
   const char * const shader_src_list = shader_src;
   char info_log[512];
-  char* s = shader_src;
+  int num_read;
   GLint success;
   GLuint vertex_shader, fragment_shader;
 
   vertex_file = fopen(vertex_filename, "r");
-  if (!vertex_file) LOG_AND_ABORT(LOG_ERROR, "Could not open vertex shader file: %s\n");
-  s = shader_src; s += fread(s, 1, sizeof(shader_src), vertex_file); *s++ = 0;
-  if (!feof(vertex_file)) LOG_AND_ABORT(LOG_ERROR, "File larger than buffer\n");
-  else if (ferror(vertex_file)) LOG_AND_ABORT(LOG_ERROR, "While reading vertex shader %s: %s\n", vertex_filename, strerror(errno));
+  if (!vertex_file) die("Could not open vertex shader file %s: %s\n", vertex_filename, strerror(errno));
+  num_read = fread(shader_src, 1, sizeof(shader_src), vertex_file);
+  shader_src[num_read] = 0;
+  if (!feof(vertex_file)) die("File larger than buffer\n");
+  else if (ferror(vertex_file)) die("While reading vertex shader %s: %s\n", vertex_filename, strerror(errno));
 
   vertex_shader = glCreateShader(GL_VERTEX_SHADER);
   glShaderSource(vertex_shader, 1, &shader_src_list, 0);
@@ -47,14 +47,15 @@ static GLuint compile_shader(const char* vertex_filename, const char* fragment_f
   glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
   if (!success) {
     glGetShaderInfoLog(vertex_shader, sizeof(info_log), 0, info_log);
-    LOG_AND_ABORT(LOG_ERROR, "Could not compile vertex shader: %s\n", info_log);
+    die("Could not compile vertex shader: %s\n", info_log);
   }
 
   fragment_file = fopen(fragment_filename, "r");
-  if (!fragment_file) LOG_AND_ABORT(LOG_ERROR, "Could not open fragment shader file: %s\n");
-  s = shader_src; s += fread(s, 1, sizeof(shader_src), fragment_file); *s++ = 0;
-  if (!feof(fragment_file)) LOG_AND_ABORT(LOG_ERROR, "File larger than buffer\n");
-  else if (ferror(fragment_file)) LOG_AND_ABORT(LOG_ERROR, "While reading fragment shader %s: %s\n", fragment_filename, strerror(errno));
+  if (!fragment_file) die("Could not open fragment shader file %s: %s\n", fragment_filename, strerror(errno));
+  num_read = fread(shader_src, 1, sizeof(shader_src), fragment_file);
+  shader_src[num_read] = 0;
+  if (!feof(fragment_file)) die("File larger than buffer\n");
+  else if (ferror(fragment_file)) die("While reading fragment shader %s: %s\n", fragment_filename, strerror(errno));
 
   fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
   glShaderSource(fragment_shader, 1, &shader_src_list, 0);
@@ -62,7 +63,7 @@ static GLuint compile_shader(const char* vertex_filename, const char* fragment_f
   glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
   if (!success) {
     glGetShaderInfoLog(fragment_shader, sizeof(info_log), 0, info_log);
-    LOG_AND_ABORT(LOG_ERROR, "Could not compile fragment shader: %s\n", info_log);
+    die("Could not compile fragment shader: %s\n", info_log);
   }
 
   result = glCreateProgram();
@@ -72,19 +73,19 @@ static GLuint compile_shader(const char* vertex_filename, const char* fragment_f
   glGetProgramiv(result, GL_LINK_STATUS, &success);
   if (!success) {
     glGetProgramInfoLog(result, 512, 0, info_log);
-    LOG_AND_ABORT(LOG_ERROR, "Could not link shader: %s\n", info_log);
+    die("Could not link shader: %s\n", info_log);
   }
 
   glDeleteShader(vertex_shader);
   glDeleteShader(fragment_shader);
   fclose(vertex_file);
   fclose(fragment_file);
-  glOKORDIE;
+  gl_ok_or_die;
   return result;
 }
 
 /* @math */
-int equalf(float a, float b) {return abs(a-b) < 0.00001;}
+static int equalf(float a, float b) {return abs(a-b) < 0.00001;}
 
 typedef struct {
   float x,y,z,w;
@@ -102,22 +103,65 @@ typedef struct {
   int x,y;
 } v2i;
 
-static v2 v2_create(float x, float y) {v2 r; r.x = x; r.y = y; return r;}
-static v3 v3_create(float x, float y, float z) {v3 r; r.x=x; r.y=y; r.z=z; return r;}
-static v4 v4_create(float x, float y, float z, float w) {v4 r; r.x=x; r.y=y; r.z=z; r.w=w; return r;}
-static v2 v3_xy(v3 v) {return v2_create(v.x, v.y);}
-static v2 v2_add(v2 v, float x, float y) {return v2_create(v.x+x, v.y+y);}
-static int v2_equal(v2 a, v2 b) {return equalf(a.x, b.x) && equalf(a.y, b.y);}
-static v2 v2_mult(v2 v, float x) {return v2_create(v.x*x, v.y*x);}
-static v3 v3_add(v3 v, float x, float y, float z) {return v3_create(v.x+x, v.y+y, v.z+z);}
+static v2 v2_create(float x, float y) {
+  v2 r;
+  r.x = x;
+  r.y = y;
+  return r;
+}
+static v3 v3_create(float x, float y, float z) {
+  v3 r;
+  r.x=x;
+  r.y=y;
+  r.z=z;
+  return r;
+}
 
-static v2 v2i_to_v2(v2i v) {return v2_create(v.x, v.y);}
+static v4 v4_create(float x, float y, float z, float w) {
+  v4 r;
+  r.x=x;
+  r.y=y;
+  r.z=z;
+  r.w=w;
+  return r;
+}
+
+static v2 v3_xy(v3 v) {
+  return v2_create(v.x, v.y);
+}
+
+static v2 v2_add(v2 v, float x, float y) {
+  return v2_create(v.x+x, v.y+y);
+}
+
+static int v2_equal(v2 a, v2 b) {
+  return equalf(a.x, b.x) && equalf(a.y, b.y);
+}
+
+static v2 v2_mult(v2 v, float x) {
+  return v2_create(v.x*x, v.y*x);
+}
+
+static v3 v3_add(v3 v, float x, float y, float z) {
+  return v3_create(v.x+x, v.y+y, v.z+z);
+}
+
+static v2 v2i_to_v2(v2i v) {
+  return v2_create(v.x, v.y);
+}
+
+typedef struct {
+  float x0,y0,x1,y1;
+} Rect;
+#define rect_min(r) (*(v2*)&(r).x0)
+#define rect_max(r) (*(v2*)&(r).x1)
 
 typedef enum {
   ENTITY_TYPE_NULL,
   ENTITY_TYPE_PLAYER,
   ENTITY_TYPE_MONSTER,
   ENTITY_TYPE_DERPER,
+  ENTITY_TYPE_THING,
   ENTITY_TYPE_COUNT
 } EntityType;
 
@@ -125,13 +169,18 @@ static const char* entity_type_names[] = {
   "Null",
   "Player",
   "Monster",
-  "Derper"
+  "Derper",
+  "Thing"
 };
 STATIC_ASSERT(ARRAY_LEN(entity_type_names) == ENTITY_TYPE_COUNT, all_entity_names_entered);
 
 typedef struct {
   EntityType type;
   v3 pos;
+  v3 vel;
+
+  /* animation */
+  unsigned int animation_time;
 
   /* Monster stuff */
   v2 target;
@@ -147,7 +196,12 @@ typedef struct {
   v2 tpos;
 } SpriteVertex;
 
-SpriteVertex spritevertex_create(v3 pos, v2 tpos) {SpriteVertex result; result.pos = pos; result.tpos = tpos; return result;}
+static SpriteVertex spritevertex_create(v3 pos, v2 tpos) {
+  SpriteVertex result;
+  result.pos = pos;
+  result.tpos = tpos;
+  return result;
+}
 typedef SpriteVertex TextVertex;
 
 typedef struct {
@@ -184,6 +238,22 @@ typedef struct {
 
 static Glyph glyph_get(Renderer *r, char c) {
   return r->glyphs[c - RENDERER_FIRST_CHAR];
+}
+
+typedef enum {
+  ANIMATION_STATE_NULL,
+  ANIMATION_STATE_PLAYER,
+  ANIMATION_STATE_COUNT
+} AnimationState;
+
+static Rect tex_pos[] = {
+  {0, 0, 0.1, 0.1}
+};
+
+static Rect get_tex_pos(AnimationState which, unsigned int time) {
+  (void)time;
+  CHECK_ENUM(ANIMATION_STATE, which);
+  return tex_pos[which];
 }
 
 static float calc_string_width(Renderer *r, const char *str) {
@@ -239,24 +309,24 @@ static void render_text(Renderer *r, const char *str, v3 pos, float height, int 
   }
 }
 
-static void render_sprite(Renderer *r, v3 p, v2 size, int center) {
+static void render_sprite(Renderer *r, v3 pos, v2 size, Rect tex, int center) {
   /* TODO: get x and y positions of sprite in sprite sheet */
   v3 a,b,c,d;
   v2 ta,tb,tc,td;
   SpriteVertex *v;
 
-  if (center) p = v3_add(p, -size.x/2, -size.y/2, 0.0f);
+  if (center) pos = v3_add(pos, -size.x/2, -size.y/2, 0.0f);
   assert(r->sprite_atlas.id);
   assert(r->num_sprites + 6 < (int)ARRAY_LEN(r->sprite_vertices));
 
-  a = p;
-  b = v3_add(p, size.x, 0,      0);
-  c = v3_add(p, 0,      size.y, 0);
-  d = v3_add(p, size.x, size.y, 0);
-  ta = v2_create(0, 1);
-  tb = v2_create(1, 1);
-  tc = v2_create(0, 0);
-  td = v2_create(1, 0);
+  a = pos;
+  b = v3_add(pos, size.x, 0,      0);
+  c = v3_add(pos, 0,      size.y, 0);
+  d = v3_add(pos, size.x, size.y, 0);
+  ta = rect_min(tex);
+  tb = v2_create(tex.x1, tex.y0);
+  tc = v2_create(tex.x0, tex.y1);
+  td = rect_max(tex);
   v = r->sprite_vertices + r->num_sprites;
   *v++ = spritevertex_create(a, ta);
   *v++ = spritevertex_create(b, tb);
@@ -270,9 +340,25 @@ static void render_sprite(Renderer *r, v3 p, v2 size, int center) {
 static void render_clear(Renderer *r) {
   glClearColor(0.0, 0.0, 0.0, 1.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  glOKORDIE;
+  gl_ok_or_die;
   r->num_sprites = 0;
   r->num_text_vertices = 0;
+}
+
+static Rect *physics2d_handle_collision(v2 *pos, v2 *vel, long dt, Rect *objects, int num_objects) {
+  v2 a,b;
+  int i;
+
+  a = *pos;
+  b = dt * *vel;
+
+  for (i = 0; i < num_objects; ++i) {
+    Rect r;
+
+    r = objects[i];
+  }
+
+  return 0;
 }
 
 static LoadImageTextureFromFile load_image_texture_from_file;
@@ -311,7 +397,7 @@ void init(void* mem, int mem_size, Funs dfuns) {
       glBindTexture(GL_TEXTURE_2D, r->text_atlas.id);
       glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, 0);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glOKORDIE;
+      gl_ok_or_die;
       r->text_atlas.size.x = w;
       r->text_atlas.size.y = h;
 
@@ -324,11 +410,11 @@ void init(void* mem, int mem_size, Funs dfuns) {
     {
       glGenVertexArrays(1, &r->sprites_vertex_array);
       glBindVertexArray(r->sprites_vertex_array);
-      glOKORDIE;
+      gl_ok_or_die;
       glGenBuffers(1, &r->sprite_vertex_buffer);
       glBindBuffer(GL_ARRAY_BUFFER, r->sprite_vertex_buffer);
       glBufferData(GL_ARRAY_BUFFER, sizeof(r->sprite_vertices), 0, GL_DYNAMIC_DRAW);
-      glOKORDIE;
+      gl_ok_or_die;
 
       glEnableVertexAttribArray(0);
       glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) 0);
@@ -340,11 +426,11 @@ void init(void* mem, int mem_size, Funs dfuns) {
     {
       glGenVertexArrays(1, &r->text_vertex_array);
       glBindVertexArray(r->text_vertex_array);
-      glOKORDIE;
+      gl_ok_or_die;
       glGenBuffers(1, &r->text_vertex_buffer);
       glBindBuffer(GL_ARRAY_BUFFER, r->text_vertex_buffer);
       glBufferData(GL_ARRAY_BUFFER, sizeof(r->text_vertices), 0, GL_DYNAMIC_DRAW);
-      glOKORDIE;
+      gl_ok_or_die;
 
       glEnableVertexAttribArray(0);
       glEnableVertexAttribArray(1);
@@ -354,7 +440,7 @@ void init(void* mem, int mem_size, Funs dfuns) {
 
     /* Compile shaders */
     r->sprite_shader = compile_shader("assets/shaders/sprite_vertex.glsl", "assets/shaders/sprite_fragment.glsl");
-    glOKORDIE;
+    gl_ok_or_die;
 
     /* Get/set uniforms */
     glUseProgram(r->sprite_shader);
@@ -362,7 +448,7 @@ void init(void* mem, int mem_size, Funs dfuns) {
     glBindTexture(GL_TEXTURE_2D, r->sprite_atlas.id);
     glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
     r->sprite_view_location = glGetUniformLocation(r->sprite_shader, "camera");
-    glOKORDIE;
+    gl_ok_or_die;
 
   }
 
@@ -375,14 +461,13 @@ void init(void* mem, int mem_size, Funs dfuns) {
   }
 }
 
-void print(const char* fmt, ...) {
-  const char *c = fmt;
+static void print(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  while (*c) {
-    if (*c != '%') {putchar(*c++); continue;}
-    ++c;
-    switch (*c++) {
+  while (*fmt) {
+    if (*fmt != '%') {putchar(*fmt++); continue;}
+    ++fmt;
+    switch (*fmt++) {
       case '%': {
         putchar('%');
         putchar('%');
@@ -410,6 +495,7 @@ int main_loop(void* mem, long ms, Input input) {
   Renderer* renderer = &m->renderer;
   float dt = (ms - last_ms) * 0.06;
   int i;
+
   last_ms = ms;
 
   /* clear */
@@ -418,51 +504,61 @@ int main_loop(void* mem, long ms, Input input) {
   /* Update entities */
   for (i = 0; i < m->num_entities; ++i) {
     Entity *e = m->entities + i;
+
+    CHECK_ENUM(ENTITY_TYPE, e->type);
+
     switch (e->type) {
-      case ENTITY_TYPE_COUNT:
       case ENTITY_TYPE_NULL:
-        fprintf(stderr, "Unknown entity type found\n");
-        abort();
+      case ENTITY_TYPE_COUNT:
         break;
       case ENTITY_TYPE_PLAYER: {
-        const float PLAYER_SPEED = 0.01;
-        e->pos.x += dt*PLAYER_SPEED*input.is_down[BUTTON_RIGHT];
-        e->pos.x -= dt*PLAYER_SPEED*input.is_down[BUTTON_LEFT];
-        e->pos.y += dt*PLAYER_SPEED*input.is_down[BUTTON_UP];
-        e->pos.y -= dt*PLAYER_SPEED*input.is_down[BUTTON_DOWN];
-        render_sprite(&m->renderer, e->pos, v2_create(1, 1), 1);
+        const float PLAYER_ACC = 0.01;
+        e->vel.x += dt*PLAYER_ACC*input.is_down[BUTTON_RIGHT];
+        e->vel.x -= dt*PLAYER_ACC*input.is_down[BUTTON_LEFT];
+        e->vel.y += dt*PLAYER_ACC*input.is_down[BUTTON_UP];
+        e->vel.y -= dt*PLAYER_ACC*input.is_down[BUTTON_DOWN];
+
+        e->animation_time += dt;
+
+        physics_handle_collision((v2*)&e->pos, (v2*)&e->vel, dt);
+
+        render_sprite(&m->renderer, e->pos, v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, e->animation_time), 1);
         render_text(&m->renderer, entity_type_names[e->type], e->pos, 0.1f, 1);
         m->renderer.camera_pos = v3_add(e->pos, 0, 0, RENDERER_CAMERA_HEIGHT);
       } break;
       case ENTITY_TYPE_MONSTER: break;
       case ENTITY_TYPE_DERPER: break;
+      case ENTITY_TYPE_THING: break;
     }
   }
 
-  render_sprite(&m->renderer, v3_create(0.1, 0.1, -1), v2_create(1, 1), 1);
-  render_sprite(&m->renderer, v3_create(-0.3, 0.3, -1), v2_create(1, 1), 1);
-  render_sprite(&m->renderer, v3_create(0.3, -0.3, -1), v2_create(1, 1), 1);
-  render_sprite(&m->renderer, v3_create(-0.3, -0.3, -1), v2_create(1, 1), 1);
-
-  #if 1
   {
-    int i;
-    puts("********* Sprite Vertices *********");
-    for (i = 0; i < renderer->num_sprites; ++i) {
-      printf("%f %f %f\n", renderer->sprite_vertices[i].pos.x, renderer->sprite_vertices[i].pos.y, renderer->sprite_vertices[i].pos.z);
-    }
-    puts("********* Sprite Vertices *********");
-    puts("********* Text Vertices *********");
-    for (i = 0; i < renderer->num_text_vertices; ++i) {
-      printf("%f %f %f\n", renderer->text_vertices[i].pos.x, renderer->text_vertices[i].pos.y, renderer->text_vertices[i].pos.z);
-    }
-    puts("********* Text Vertices *********");
+    static unsigned int t;
+    t += dt;
+    render_sprite(&m->renderer, v3_create(0.1, 0.1, -1), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
+    render_sprite(&m->renderer, v3_create(-0.3, 0.3, -1), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
+    render_sprite(&m->renderer, v3_create(0.3, -0.3, -1), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
+    render_sprite(&m->renderer, v3_create(-0.3, -0.3, -1), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
   }
+
+  #if 0
+  puts("********* Entities *********");
+  for (i = 0; i < m->num_entities; ++i)
+    print("%e\n", &m->entities[i]);
+
+  puts("********* Sprite Vertices *********");
+  for (i = 0; i < renderer->num_sprites; ++i)
+    printf("%f %f %f\n", renderer->sprite_vertices[i].pos.x, renderer->sprite_vertices[i].pos.y, renderer->sprite_vertices[i].pos.z);
+
+  puts("********* Text Vertices *********");
+  for (i = 0; i < renderer->num_text_vertices; ++i)
+    printf("%f %f %f\n", renderer->text_vertices[i].pos.x, renderer->text_vertices[i].pos.y, renderer->text_vertices[i].pos.z);
   #endif
+
   glUseProgram(renderer->sprite_shader);
 
   glUniform3f(renderer->sprite_view_location, renderer->camera_pos.x, renderer->camera_pos.y, renderer->camera_pos.z);
-  glOKORDIE;
+  gl_ok_or_die;
 
   /* draw sprites */
   glBindVertexArray(renderer->sprites_vertex_array);
@@ -470,7 +566,7 @@ int main_loop(void* mem, long ms, Input input) {
   glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_sprites*sizeof(*renderer->sprite_vertices), renderer->sprite_vertices);
   glBindTexture(GL_TEXTURE_2D, renderer->sprite_atlas.id);
   glDrawArrays(GL_TRIANGLES, 0, renderer->num_sprites);
-  glOKORDIE;
+  gl_ok_or_die;
 
   /* draw text */
   glBindVertexArray(renderer->text_vertex_array);
@@ -478,7 +574,7 @@ int main_loop(void* mem, long ms, Input input) {
   glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_text_vertices*sizeof(*renderer->text_vertices), renderer->text_vertices);
   glBindTexture(GL_TEXTURE_2D, renderer->text_atlas.id);
   glDrawArrays(GL_TRIANGLES, 0, renderer->num_text_vertices);
-  glOKORDIE;
+  gl_ok_or_die;
 
   return input.was_pressed[BUTTON_START];
 }

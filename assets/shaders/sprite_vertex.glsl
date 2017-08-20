@@ -8,16 +8,20 @@ uniform vec3 camera;
 
 void main() {
   // calculate distance between position and camera
-  const float VIEW_DISTANCE = 9;
-  const float NEAR_DISTANCE = 0.3;
-  vec3 p = pos;
-  float NEAR = camera.z - NEAR_DISTANCE;
-  float FAR = camera.z - NEAR_DISTANCE - VIEW_DISTANCE;
-  float mult = NEAR / (camera.z - p.z);
-  p -= camera;
-  p.x *= mult;
-  p.y *= mult;
-  p.z = ((p.z - NEAR) / VIEW_DISTANCE)*2 + 1;
+  const float FAR_Z = -10;
+  const float NEAR_Z = -1;
+  // TODO: change near size
+  // const float NEAR_VIEW_WIDTH = 1;
+  // const float NEAR_VIEW_HEIGHT = 1;
+
+  vec3 p = pos - camera;
+
+  float scale = NEAR_Z / p.z;
+  p.x *= scale;
+  p.y *= scale;
+
+  // normalize z to -1,1
+  p.z = (p.z - NEAR_Z) / (FAR_Z - NEAR_Z) * 2 - 1;
 
   gl_Position = vec4(p, 1);
   f_tpos = tpos;
