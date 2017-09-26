@@ -9,7 +9,7 @@ uniform vec3 camera;
 void main() {
   // calculate distance between position and camera
   const float FAR_Z = -10;
-  const float NEAR_Z = -1;
+  const float NEAR_Z = -0.5;
   // TODO: change near size
   // const float NEAR_VIEW_WIDTH = 1;
   // const float NEAR_VIEW_HEIGHT = 1;

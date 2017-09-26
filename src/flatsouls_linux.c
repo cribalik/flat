@@ -177,7 +177,7 @@ int main(int argc, const char** argv) {
           case SDL_KEYDOWN: {
             int i;
             if (event.key.repeat) break;
-            FOREACH_ENUM(i, BUTTON) {
+            ENUM_FOREACH(i, BUTTON) {
               if (event.key.keysym.sym == key_codes[i]) {
                 input.was_pressed[i] = !input.is_down[i];
                 input.is_down[i] = 1;
@@ -188,7 +188,7 @@ int main(int argc, const char** argv) {
           case SDL_KEYUP: {
             int i;
             if (event.key.repeat) break;
-            FOREACH_ENUM(i, BUTTON) {
+            ENUM_FOREACH(i, BUTTON) {
               if (event.key.keysym.sym == key_codes[i]) {
                 input.is_down[i] = 0;
                 break;

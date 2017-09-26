@@ -1,3 +1,5 @@
+#include "acorns/utils.h"
+#include "acorns/array.h"
 #include <stdio.h>
 #include <stdlib.h>
 #define GL_GLEXT_PROTOTYPES
@@ -5,8 +7,6 @@
 #include <GL/glext.h>
 
 #include <stdarg.h>
-
-#define STATIC_ASSERT(expr, name) typedef char static_assert_##name[expr?1:-1]
 
 #define die printf("%s:%i: error: ", __FILE__, __LINE__),_die
 static void _die(const char* fmt, ...) {
@@ -41,23 +41,6 @@ static void _gl_ok_or_die(const char* file, int line) {
   exit(1);
 }
 
-typedef unsigned char u8;
-typedef unsigned short u16;
-typedef unsigned int u32;
-typedef unsigned long u64;
-typedef char i8;
-typedef short i16;
-typedef int i32;
-typedef long i64;
-
-STATIC_ASSERT(sizeof(u8) == 1, u8_is_8_bits);
-STATIC_ASSERT(sizeof(u16) == 2, u16_is_16_bits);
-STATIC_ASSERT(sizeof(u32) == 4, u32_is_32_bits);
-STATIC_ASSERT(sizeof(u64) == 8, u64_is_64_bits);
-STATIC_ASSERT(sizeof(long) == sizeof(void*), ptr_is_long);
-
-#define ARRAY_LEN(a) (sizeof(a)/sizeof(*a))
-
 typedef enum Button {
   BUTTON_NULL,
   BUTTON_A,
@@ -73,8 +56,8 @@ typedef enum Button {
   BUTTON_COUNT
 } Button;
 
-#define FOREACH_ENUM(i, name) for (i = (&i == (int*)0)+1; i < name##_COUNT; ++i)
-#define CHECK_ENUM(name, value) ((value <= name##_NULL || value >= name##_COUNT) ? die("Enum " #name " out of range (%i)\n", value), 0 : 0)
+#define ENUM_FOREACH(i, name) for (i = name##_NULL+1; i < name##_COUNT; ++i)
+#define ENUM_CHECK(name, value) ((value <= name##_NULL || value >= name##_COUNT) ? die("Enum " #name " out of range (%i)\n", value), 0 : 0)
 
 typedef struct Input {
   char was_pressed[BUTTON_COUNT], is_down[BUTTON_COUNT];

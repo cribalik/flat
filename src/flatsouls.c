@@ -1,4 +1,10 @@
 #include "flatsouls_utils.h"
+#include "flatsouls_math.h"
+
+#define MEM_IMPLEMENTATION
+#include "acorns/mem.h"
+#undef MEM_IMPLEMENTATION
+
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -8,21 +14,11 @@
 #include <math.h>
 
 typedef struct {
-  char *curr, *end;
-  char* mem;
-} Arena;
-
-typedef struct {
   char* data;
   int w,h;
 } Bitmap;
 
-#define arena_push(arena, type) arena_push_block(arena, sizeof(type))
-static void* arena_push_block(Arena *a, int size) {
-  assert(a->curr + size <= a->end);
-  a->curr += size;
-  return a->curr - size;
-}
+static void print(const char* fmt, ...);
 
 static GLuint compile_shader(const char* vertex_filename, const char* fragment_filename) {
   GLuint result = 0;
@@ -84,81 +80,10 @@ static GLuint compile_shader(const char* vertex_filename, const char* fragment_f
   return result;
 }
 
-/* @math */
-static int equalf(float a, float b) {return abs(a-b) < 0.00001;}
-
-typedef struct {
-  float x,y,z,w;
-} v4;
-
-typedef struct {
-  float x,y,z;
-} v3;
-
-typedef struct {
-  float x,y;
-} v2;
-
-typedef struct {
-  int x,y;
-} v2i;
-
-static v2 v2_create(float x, float y) {
-  v2 r;
-  r.x = x;
-  r.y = y;
-  return r;
-}
-static v3 v3_create(float x, float y, float z) {
-  v3 r;
-  r.x=x;
-  r.y=y;
-  r.z=z;
-  return r;
-}
-
-static v4 v4_create(float x, float y, float z, float w) {
-  v4 r;
-  r.x=x;
-  r.y=y;
-  r.z=z;
-  r.w=w;
-  return r;
-}
-
-static v2 v3_xy(v3 v) {
-  return v2_create(v.x, v.y);
-}
-
-static v2 v2_add(v2 v, float x, float y) {
-  return v2_create(v.x+x, v.y+y);
-}
-
-static int v2_equal(v2 a, v2 b) {
-  return equalf(a.x, b.x) && equalf(a.y, b.y);
-}
-
-static v2 v2_mult(v2 v, float x) {
-  return v2_create(v.x*x, v.y*x);
-}
-
-static v3 v3_add(v3 v, float x, float y, float z) {
-  return v3_create(v.x+x, v.y+y, v.z+z);
-}
-
-static v2 v2i_to_v2(v2i v) {
-  return v2_create(v.x, v.y);
-}
-
-typedef struct {
-  float x0,y0,x1,y1;
-} Rect;
-#define rect_min(r) (*(v2*)&(r).x0)
-#define rect_max(r) (*(v2*)&(r).x1)
-
 typedef enum {
   ENTITY_TYPE_NULL,
   ENTITY_TYPE_PLAYER,
+  ENTITY_TYPE_WALL,
   ENTITY_TYPE_MONSTER,
   ENTITY_TYPE_DERPER,
   ENTITY_TYPE_THING,
@@ -168,6 +93,7 @@ typedef enum {
 static const char* entity_type_names[] = {
   "Null",
   "Player",
+  "Wall",
   "Monster",
   "Derper",
   "Thing"
@@ -179,12 +105,114 @@ typedef struct {
   v3 pos;
   v3 vel;
 
+  /* physics */
+  Rect hitbox;
+
   /* animation */
   unsigned int animation_time;
 
   /* Monster stuff */
   v2 target;
 } Entity;
+
+static float physics_collide_ray(Line a, Line b) {
+  float rx = a.x1 - a.x0;
+  float ry = a.y1 - a.y0;
+  float sx = b.x1 - b.x0;
+  float sy = b.y1 - b.y0;
+  float d = rx*sy - ry*sx;
+  float cx = b.x0 - a.x0;
+  float cy = b.y0 - a.y0;
+
+  if (fabs(d) >= 0.001f) {
+    float t = (cx*sy - cy*sx)/d;
+    float u = (cx*ry - cy*rx)/d;
+    if (t >= 0 && t <= 1 && u > 0 && u <= 1) {
+      print("%l %l %f %f %f\n", &a, &b, t, u, d);
+      return at_leastf(t - 0.001f, 0.0f);
+    }
+  }
+  return -1.0f;
+}
+
+static float physics_collide_line_rect(Line l, Rect r) {
+  float f;
+  Line b;
+
+  /* top */
+  b.x0 = r.x0;
+  b.x1 = r.x1;
+  b.y0 = b.y1 = r.y1;
+  if ((f = physics_collide_ray(l, b)) != -1.0f)
+    return f;
+
+  /* bottom */
+  b.x0 = r.x0;
+  b.x1 = r.x1;
+  b.y0 = b.y1 = r.y0;
+  if ((f = physics_collide_ray(l, b)) != -1.0f)
+    return f;
+
+  /* left */
+  b.x0 = b.x1 = r.x0;
+  b.y0 = r.y0;
+  b.y1 = r.y1;
+  if ((f = physics_collide_ray(l, b)) != -1.0f)
+    return f;
+
+  /* right */
+  b.x0 = b.x1 = r.x1;
+  b.y0 = r.y0;
+  b.y1 = r.y1;
+  if ((f = physics_collide_ray(l, b)) != -1.0f)
+    return f;
+
+  return -1.0f;
+}
+
+static int physics_rect_collide(Rect a, Rect b) {
+  return !(a.x1 < b.x0 || a.x0 > b.x1 || a.y0 > b.y1 || a.y1 < b.y1);
+}
+
+static Entity* physics_find_collision(Entity *e, float dt, Entity *entities, int num_entities, float *t_out) {
+  int i;
+  Line l;
+  Rect r;
+
+  r = rect_offset(e->hitbox, v3_xy(e->pos));
+  rect_mid(r, &l.x0, &l.y0);
+  l.x1 = l.x0 + (e->vel.x * dt);
+  l.y1 = l.y0 + (e->vel.y * dt);
+
+  for (i = 0; i < num_entities; ++i) {
+    Entity *other;
+    float t;
+    Rect expanded_hitbox;
+
+    other = entities + i;
+
+    if (other == e)
+      continue;
+
+    expanded_hitbox = rect_expand(other->hitbox, r);
+    expanded_hitbox = rect_offset(expanded_hitbox, v3_xy(other->pos));
+    t = physics_collide_line_rect(l, expanded_hitbox);
+    if (t == -1.0f)
+      continue;
+
+    *t_out = t;
+    return other;
+  }
+
+  return 0;
+}
+
+static void physics_vel_update(Entity *e, float dt) {
+  if (fabs(e->vel.x * dt) > 0.0001f)
+    e->pos.x += e->vel.x * dt;
+  if (fabs(e->vel.y * dt) > 0.0001f)
+    e->pos.y += e->vel.y * dt;
+}
 
 typedef struct {
   GLuint id;
@@ -232,9 +260,17 @@ typedef struct {
   Entity entities[256];
   int num_entities;
   Renderer renderer;
-  Arena arena;
-  char arena_data[128*1024*1024];
+  Stack stack;
+  char stack_data[128*1024*1024];
 } Memory;
+
+static int entity_push(Memory *mem, Entity e) {
+  if (mem->num_entities >= ARRAY_LEN(mem->entities))
+    return 1;
+
+  mem->entities[mem->num_entities++] = e;
+  return 0;
+}
 
 static Glyph glyph_get(Renderer *r, char c) {
   return r->glyphs[c - RENDERER_FIRST_CHAR];
@@ -252,7 +288,7 @@ static Rect tex_pos[] = {
 
 static Rect get_tex_pos(AnimationState which, unsigned int time) {
   (void)time;
-  CHECK_ENUM(ANIMATION_STATE, which);
+  ENUM_CHECK(ANIMATION_STATE, which);
   return tex_pos[which];
 }
 
@@ -345,22 +381,6 @@ static void render_clear(Renderer *r) {
   r->num_text_vertices = 0;
 }
 
-static Rect *physics2d_handle_collision(v2 *pos, v2 *vel, long dt, Rect *objects, int num_objects) {
-  v2 a,b;
-  int i;
-
-  a = *pos;
-  b = dt * *vel;
-
-  for (i = 0; i < num_objects; ++i) {
-    Rect r;
-
-    r = objects[i];
-  }
-
-  return 0;
-}
-
 static LoadImageTextureFromFile load_image_texture_from_file;
 static LoadFontFromFile load_font_from_file;
 
@@ -373,12 +393,8 @@ void init(void* mem, int mem_size, Funs dfuns) {
   load_image_texture_from_file = dfuns.load_image_texture_from_file;
   load_font_from_file = dfuns.load_font_from_file;
 
-  /* Init arena */
-  {
-    Arena* a = &m->arena;
-    a->curr = m->arena_data;
-    a->end = m->arena_data + sizeof(m->arena_data);
-  }
+  /* Init stack */
+  stack_init(&m->stack, m->stack_data, sizeof(m->stack_data));
 
   /* Init renderer */
   {
@@ -449,7 +465,6 @@ void init(void* mem, int mem_size, Funs dfuns) {
     glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
     r->sprite_view_location = glGetUniformLocation(r->sprite_shader, "camera");
     gl_ok_or_die;
-
   }
 
   /* Create player */
@@ -457,7 +472,18 @@ void init(void* mem, int mem_size, Funs dfuns) {
     Entity e = {0};
     e.type = ENTITY_TYPE_PLAYER;
     e.pos = v3_create(0, 0, 0);
-    m->entities[m->num_entities++] = e;
+    e.vel = v3_create(0, 0, 0);
+    e.hitbox = rect_create(-0.5, 0.5, -0.5, 0.5);
+    entity_push(m, e);
+  }
+
+  /* Create walls */
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_WALL;
+    e.pos = v3_create(0, -10, 0);
+    e.hitbox = rect_create(-10, 10, -1, 1);
+    entity_push(m, e);
   }
 }
 
@@ -472,29 +498,65 @@ static void print(const char* fmt, ...) {
         putchar('%');
         putchar('%');
       } break;
+
+      case 'v': {
+        switch (*fmt++) {
+          case '2': {
+            v2 *v = va_arg(args, v2*);
+            printf("(%f,%f)", v->x, v->y);
+          } break;
+          case '3': {
+            v3 *v = va_arg(args, v3*);
+            printf("(%f,%f,%f)", v->x, v->y, v->z);
+          } break;
+        }
+      } break;
+
       case 'e': {
         Entity* e = va_arg(args, Entity*);
-        printf("%s: x: %f y: %f z: %f\n", entity_type_names[e->type], e->pos.x, e->pos.y, e->pos.z);
+        print("%s: pos: %v3 hitbox: %r", entity_type_names[e->type], &e->pos, &e->hitbox);
       } break;
+
+      case 's': {
+        const char *s = va_arg(args, char*);
+        printf("%s", s);
+      } break;
+
+      case 'r': {
+        Rect *r = va_arg(args, Rect*);
+        printf("(%f,%f,%f,%f)", r->x0, r->x1, r->y0, r->y1);
+      } break;
+
       case 'i': {
         int i = va_arg(args, int);
         printf("%i", i);
-      }
+      } break;
+
       case 'f': {
         double f = va_arg(args, double);
         printf("%f", f);
-      }
+      } break;
+
+      case 'l': {
+        Line *l = va_arg(args, Line*);
+        printf("(%f,%f) -> (%f,%f)", l->x0, l->y0, l->x1, l->y1);
+      } break;
     }
   }
   va_end(args);
 }
 
 int main_loop(void* mem, long ms, Input input) {
-  static long last_ms = 0;
-  Memory* m = mem;
-  Renderer* renderer = &m->renderer;
-  float dt = (ms - last_ms) * 0.06;
+  static long last_ms;
+  Memory* m;
+  Renderer* renderer;
+  float dt;
   int i;
+
+  m = (Memory*)mem;
+  renderer = &m->renderer;
+  dt = (ms - last_ms) / 1000.0f;
+  dt = dt > 0.05f ? 0.05f : dt;
 
   last_ms = ms;
 
@@ -505,14 +567,19 @@ int main_loop(void* mem, long ms, Input input) {
   for (i = 0; i < m->num_entities; ++i) {
     Entity *e = m->entities + i;
 
-    CHECK_ENUM(ENTITY_TYPE, e->type);
+    ENUM_CHECK(ENTITY_TYPE, e->type);
 
     switch (e->type) {
       case ENTITY_TYPE_NULL:
+
       case ENTITY_TYPE_COUNT:
         break;
+
       case ENTITY_TYPE_PLAYER: {
-        const float PLAYER_ACC = 0.01;
+        const float PLAYER_ACC = 3;
+        Entity *target;
+        float t;
+
         e->vel.x += dt*PLAYER_ACC*input.is_down[BUTTON_RIGHT];
         e->vel.x -= dt*PLAYER_ACC*input.is_down[BUTTON_LEFT];
         e->vel.y += dt*PLAYER_ACC*input.is_down[BUTTON_UP];
@@ -520,39 +587,63 @@ int main_loop(void* mem, long ms, Input input) {
 
         e->animation_time += dt;
 
-        physics_handle_collision((v2*)&e->pos, (v2*)&e->vel, dt);
+        /*e->vel.y -= dt * 10.0f;*/
+        
+        for (target = m->entities;; ++target) {
+          target = physics_find_collision(e, dt, target, m->num_entities, &t);
+          if (!target)
+            break;
+
+          print("collision: %f with: %e\n", t, target);
+          if (target->type == ENTITY_TYPE_WALL) {
+            e->vel.x *= t;
+            e->vel.y *= t;
+          }
+        }
+
+        physics_vel_update(e, dt);
 
         render_sprite(&m->renderer, e->pos, v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, e->animation_time), 1);
         render_text(&m->renderer, entity_type_names[e->type], e->pos, 0.1f, 1);
         m->renderer.camera_pos = v3_add(e->pos, 0, 0, RENDERER_CAMERA_HEIGHT);
       } break;
-      case ENTITY_TYPE_MONSTER: break;
-      case ENTITY_TYPE_DERPER: break;
-      case ENTITY_TYPE_THING: break;
+
+      case ENTITY_TYPE_WALL:
+        render_sprite(&m->renderer, e->pos, rect_size(e->hitbox), get_tex_pos(ANIMATION_STATE_PLAYER, e->animation_time), 1);
+        break;
+
+      case ENTITY_TYPE_MONSTER:
+        break;
+
+      case ENTITY_TYPE_DERPER:
+        break;
+
+      case ENTITY_TYPE_THING:
+        break;
     }
   }
 
   {
     static unsigned int t;
     t += dt;
-    render_sprite(&m->renderer, v3_create(0.1, 0.1, -1), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
-    render_sprite(&m->renderer, v3_create(-0.3, 0.3, -1), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
-    render_sprite(&m->renderer, v3_create(0.3, -0.3, -1), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
-    render_sprite(&m->renderer, v3_create(-0.3, -0.3, -1), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
+    render_sprite(&m->renderer, v3_create(0.1, 0.1, 0), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
+    render_sprite(&m->renderer, v3_create(-0.3, 0.3, 0), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
+    render_sprite(&m->renderer, v3_create(0.3, -0.3, 0), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
+    render_sprite(&m->renderer, v3_create(-0.3, -0.3, 0), v2_create(1, 1), get_tex_pos(ANIMATION_STATE_PLAYER, t), 1);
   }
 
   #if 0
-  puts("********* Entities *********");
-  for (i = 0; i < m->num_entities; ++i)
-    print("%e\n", &m->entities[i]);
+    puts("********* Entities *********");
+    for (i = 0; i < m->num_entities; ++i)
+      print("%e\n", &m->entities[i]);
 
-  puts("********* Sprite Vertices *********");
-  for (i = 0; i < renderer->num_sprites; ++i)
-    printf("%f %f %f\n", renderer->sprite_vertices[i].pos.x, renderer->sprite_vertices[i].pos.y, renderer->sprite_vertices[i].pos.z);
+    puts("********* Sprite Vertices *********");
+    for (i = 0; i < renderer->num_sprites; ++i)
+      printf("%f %f %f\n", renderer->sprite_vertices[i].pos.x, renderer->sprite_vertices[i].pos.y, renderer->sprite_vertices[i].pos.z);
 
-  puts("********* Text Vertices *********");
-  for (i = 0; i < renderer->num_text_vertices; ++i)
-    printf("%f %f %f\n", renderer->text_vertices[i].pos.x, renderer->text_vertices[i].pos.y, renderer->text_vertices[i].pos.z);
+    puts("********* Text Vertices *********");
+    for (i = 0; i < renderer->num_text_vertices; ++i)
+      printf("%f %f %f\n", renderer->text_vertices[i].pos.x, renderer->text_vertices[i].pos.y, renderer->text_vertices[i].pos.z);
   #endif
 
   glUseProgram(renderer->sprite_shader);
