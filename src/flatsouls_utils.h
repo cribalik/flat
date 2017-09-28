@@ -65,7 +65,7 @@ typedef struct Input {
 } Input;
 
 typedef struct Glyph {
-  unsigned short s0, t0, s1, t1; /* Position in image */
+  unsigned short x0, y0, x1, y1; /* Position in image */
   float offset_x, offset_y, advance; /* Glyph offset info */
 } Glyph;
 
