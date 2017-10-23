@@ -77,7 +77,7 @@ static Button key_to_button(Sint32 key) {
   return 0;
 }
 
-static int key_codes[] = {
+static i32 key_codes[] = {
   0,
   SDLK_t,
   SDLK_y,
@@ -130,10 +130,12 @@ int main(int argc, const char** argv) {
                             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                             screen_w, screen_h,
                             SDL_WINDOW_OPENGL);
-  if (!window) sdl_abort();
+  if (!window)
+    sdl_abort();
 
   gl_context = SDL_GL_CreateContext(window);
-  if (!gl_context) sdl_abort();
+  if (!gl_context)
+    sdl_abort();
 
   /* Load gl functions */
   #if 0
@@ -165,42 +167,49 @@ int main(int argc, const char** argv) {
   }
 
   /* main loop */
-  {
-    while (1) {
-      SDL_Event event;
-      while (SDL_PollEvent(&event)) {
-        memset(input.was_pressed, 0, sizeof(input.was_pressed));
-        switch (event.type) {
-          case SDL_WINDOWEVENT:
-            if (event.window.event == SDL_WINDOWEVENT_CLOSE) return 0;
+  while (1) {
+    int i;
+    SDL_Event event;
+
+    for (i = 0; i < ARRAY_LEN(input.was_pressed); ++i)
+      input.was_pressed[i] = 0;
+
+    while (SDL_PollEvent(&event)) {
+      switch (event.type) {
+        case SDL_WINDOWEVENT:
+          if (event.window.event == SDL_WINDOWEVENT_CLOSE)
+            return 0;
+          break;
+
+        case SDL_KEYDOWN:
+          if (event.key.repeat)
             break;
-          case SDL_KEYDOWN: {
-            int i;
-            if (event.key.repeat) break;
-            ENUM_FOREACH(i, BUTTON) {
-              if (event.key.keysym.sym == key_codes[i]) {
-                input.was_pressed[i] = !input.is_down[i];
-                input.is_down[i] = 1;
-                break;
-              }
+
+          ENUM_FOREACH(i, BUTTON) {
+            if (event.key.keysym.sym != key_codes[i])
+              continue;
+
+            input.was_pressed[i] = 1;
+            input.is_down[i] = 1;
+            break;
+          }
+          break;
+
+        case SDL_KEYUP:
+          if (event.key.repeat)
+            break;
+          ENUM_FOREACH(i, BUTTON) {
+            if (event.key.keysym.sym == key_codes[i]) {
+              input.is_down[i] = 0;
+              break;
             }
-          } break;
-          case SDL_KEYUP: {
-            int i;
-            if (event.key.repeat) break;
-            ENUM_FOREACH(i, BUTTON) {
-              if (event.key.keysym.sym == key_codes[i]) {
-                input.is_down[i] = 0;
-                break;
-              }
-            }
-          } break;
-        }
+          }
+          break;
       }
-      err = main_loop(memory, SDL_GetTicks(), input);
-      if (err) return 0;
-      SDL_GL_SwapWindow(window);
     }
+    err = main_loop(memory, SDL_GetTicks(), input);
+    if (err) return 0;
+    SDL_GL_SwapWindow(window);
   }
 
   return 0;

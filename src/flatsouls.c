@@ -199,26 +199,26 @@ static int physics_rect_collide(Rect a, Rect b) {
 
 static void handle_collision(Memory *m, Entity *e, float dt) {
   int i,j;
-  float x0,y0,x1,y1,
-        wx0,wy0,wx1,wy1,
-        nx,ny,
-        w,h,
-        t, min_t,
-        vx,vy, ax,ay, bx,by, dot;
-  Entity *hit, *target;
+  float w,h;
 
   w = (e->hitbox.x1 - e->hitbox.x0)/2.0f;
   h = (e->hitbox.y1 - e->hitbox.y0)/2.0f;
 
-  hit = 0;
-  min_t = 2.0f;
-  for (i = 0; i < 3; ++i) {
+  for (i = 0; i < 4; ++i) {
+    float t, x0,y0,x1,y1, nx, ny;
+    Entity *hit;
+
+    hit = 0;
+    t = 2.0f;
     x0 = e->hitbox.x0 + e->pos.x + w;
     y0 = e->hitbox.y0 + e->pos.y + h;
     x1 = x0 + e->vel.x * dt;
     y1 = y0 + e->vel.y * dt;
 
     for (j = 0; j < m->num_entities; ++j) {
+      float wx0,wy0,wx1,wy1, nx_tmp,ny_tmp, t_tmp;
+      Entity *target;
+
       target = m->entities + j;
       if (target == e)
         continue;
@@ -230,22 +230,31 @@ static void handle_collision(Memory *m, Entity *e, float dt) {
       wy1 = target->hitbox.y1 + h + target->pos.y;
 
       /* does line hit the box ? */
-      t = 2.0f;
-      wall_test(x0, y0, x1, y1, wx0, wy1, wx1, wy1, &t, &nx, &ny); /* top */
-      wall_test(x0, y0, x1, y1, wx1, wy0, wx0, wy0, &t, &nx, &ny); /* bottom */
-      wall_test(x0, y0, x1, y1, wx0, wy0, wx0, wy1, &t, &nx, &ny); /* left */
-      wall_test(x0, y0, x1, y1, wx1, wy1, wx1, wy0, &t, &nx, &ny); /* right */
+      t_tmp = 2.0f;
+      /* lines need to be clockwise oriented to get correct normals */
+      wall_test(x0, y0, x1, y1, wx0, wy1, wx1, wy1, &t_tmp, &nx_tmp, &ny_tmp); /* top */
+      wall_test(x0, y0, x1, y1, wx1, wy0, wx0, wy0, &t_tmp, &nx_tmp, &ny_tmp); /* bottom */
+      wall_test(x0, y0, x1, y1, wx0, wy0, wx0, wy1, &t_tmp, &nx_tmp, &ny_tmp); /* left */
+      wall_test(x0, y0, x1, y1, wx1, wy1, wx1, wy0, &t_tmp, &nx_tmp, &ny_tmp); /* right */
 
-      if (t == 2.0f)
+      if (t_tmp == 2.0f)
         continue;
 
-      if (t < min_t) {
+      if (t_tmp < t) {
         hit = target;
-        min_t = t;
+        t = t_tmp;
+        nx = nx_tmp;
+        ny = ny_tmp;
       }
     }
 
-    if (hit && hit->type == ENTITY_TYPE_WALL) {
+    if (!hit)
+      break;
+
+    normalize(&nx, &ny);
+
+    if (hit->type == ENTITY_TYPE_WALL) {
+      float vx,vy, ax,ay, bx,by, dot;
       /**
        * Glide along the wall
        *
@@ -253,9 +262,6 @@ static void handle_collision(Memory *m, Entity *e, float dt) {
        * a is the part that goes up to the wall
        * b is the part that goes beyond the wall
        */
-
-      normalize(&nx, &ny);
-
       vx = x1 - x0;
       vy = y1 - y0;
       dot = vx*nx + vy*ny;
@@ -273,9 +279,13 @@ static void handle_collision(Memory *m, Entity *e, float dt) {
       bx = vx - dot * nx;
       by = vy - dot * ny;
       e->vel = v2_create(bx/dt, by/dt);
+
+      /*printf("(%f,%f) (%f,%f) (%f,%f) (%f,%f)\n", nx, ny, vx, vy, ax, ay, bx, by);*/
     }
-    else
-      break;
+    else {
+      /* TODO: handle collision with non-wall type */
+      continue;
+    }
   }
 
   e->pos.x += e->vel.x*dt;
@@ -495,8 +505,29 @@ void init(void* mem, int mem_size, Funs dfuns) {
   {
     Entity e = {0};
     e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(0, -2, 0);
-    e.hitbox = line_create(-2, -1, 2, 1);
+    e.pos = v3_create(0, -4, 0);
+    e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
+    entity_push(m, e);
+  }
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_WALL;
+    e.pos = v3_create(-4, 0, 0);
+    e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
+    entity_push(m, e);
+  }
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_WALL;
+    e.pos = v3_create(4, 0, 0);
+    e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
+    entity_push(m, e);
+  }
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_WALL;
+    e.pos = v3_create(0, 4, 0);
+    e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
     entity_push(m, e);
   }
 }
@@ -571,7 +602,6 @@ int main_loop(void* mem, long ms, Input input) {
   renderer = &m->renderer;
   dt = (ms - last_ms) / 1000.0f;
   dt = dt > 0.05f ? 0.05f : dt;
-
   last_ms = ms;
 
   /* clear */
@@ -585,21 +615,20 @@ int main_loop(void* mem, long ms, Input input) {
 
     switch (e->type) {
       case ENTITY_TYPE_NULL:
-
       case ENTITY_TYPE_COUNT:
         break;
 
-      case ENTITY_TYPE_PLAYER: {
-        const float PLAYER_ACC = 10;
+      case ENTITY_TYPE_PLAYER:
+        #define PLAYER_ACC 10
 
         e->vel.x += dt*PLAYER_ACC*input.is_down[BUTTON_RIGHT];
         e->vel.x -= dt*PLAYER_ACC*input.is_down[BUTTON_LEFT];
-        e->vel.y += dt*PLAYER_ACC*input.is_down[BUTTON_UP];
-        e->vel.y -= dt*PLAYER_ACC*input.is_down[BUTTON_DOWN];
+        if (input.was_pressed[BUTTON_UP])
+          e->vel.y = 10.0f;
 
         e->animation_time += dt;
 
-        /*e->vel.y -= dt * 10.0f;*/
+        e->vel.y -= dt * 25.0f;
         
         handle_collision(m, e, dt);
 
@@ -607,7 +636,9 @@ int main_loop(void* mem, long ms, Input input) {
         render_text(&m->renderer, entity_type_names[e->type], GET3(e->pos), 0.1f, 1);
         m->renderer.camera_pos = e->pos;
         m->renderer.camera_pos.z += RENDERER_CAMERA_HEIGHT;
-      } break;
+
+        #undef PLAYER_ACC
+        break;
 
       case ENTITY_TYPE_WALL:
         render_anim_sprite(&m->renderer, GET3(e->pos), GET2(rect_size(e->hitbox)), ANIMATION_STATE_PLAYER, e->animation_time, 1);

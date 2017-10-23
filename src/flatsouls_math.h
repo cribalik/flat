@@ -195,4 +195,3 @@ static Rect rect_expand(Rect a, v2 size) {
 
 #define SET2(name, x, y) (((name).x=(x)), ((name).y=(y)))
 #define SET3(name, x, y, z) (((name).x=(x)), ((name).y=(y)), ((name).z=(z)))
-
