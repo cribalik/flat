@@ -1,5 +1,5 @@
-#include "flatsouls_utils.h"
-#include "flatsouls_math.h"
+#include "flat_utils.h"
+#include "flat_math.h"
 
 #define MEM_IMPLEMENTATION
 #include "acorns/mem.h"

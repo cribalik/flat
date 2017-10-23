@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 200112L
-#include "flatsouls_utils.h"
+#include "flat_utils.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <SDL2/SDL_opengl_glext.h>
@@ -12,7 +12,7 @@
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
-#include "flatsouls_ttf.c"
+#include "flat_ttf.c"
 
 
 /* ======= Externals ======= */
@@ -141,7 +141,7 @@ int main(int argc, const char** argv) {
   #if 0
   {
     #define GLFUN(name, prototype) *(void**) (&name) = SDL_GL_GetProcAddress(#name);
-    #include "flatsouls_gl.h"
+    #include "flat_gl.h"
     #undef GLFUN
   }
   #endif
@@ -150,7 +150,7 @@ int main(int argc, const char** argv) {
 
   /* load game loop */
   {
-    void* obj = SDL_LoadObject("flatsouls.so");
+    void* obj = SDL_LoadObject("flat.so");
     if (!obj) sdl_abort();
     *(void**)(&main_loop) = SDL_LoadFunction(obj, "main_loop");
     if (!main_loop) sdl_abort();
