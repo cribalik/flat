@@ -1,8 +1,7 @@
 #define _POSIX_C_SOURCE 200112L
-#include "flat_utils.h"
+#include "flat_utils.c"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
-#include <SDL2/SDL_opengl_glext.h>
 #include <SOIL/SOIL.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -15,7 +14,7 @@
 #include "flat_ttf.c"
 
 
-/* ======= Externals ======= */
+/* ======= Platform api ======= */
 
 void load_image_texture_from_file(const char* filename, GLuint* result, int* w, int* h) {
   glGenTextures(1, result);

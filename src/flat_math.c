@@ -1,6 +1,10 @@
 #define MAX(a,b) ((a) < (b) ? (b) : (a))
 #include <math.h>
 
+static unsigned int random(unsigned int *r) {
+  return *r = 1103515245 * *r + 12345;
+}
+
 static int next_pow2(int x) {
   x--;
   x |= x >> 1;

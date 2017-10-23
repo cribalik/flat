@@ -1,9 +1,5 @@
-#include "flat_utils.h"
-#include "flat_math.h"
-
-#define MEM_IMPLEMENTATION
-#include "acorns/mem.h"
-#undef MEM_IMPLEMENTATION
+#include "flat_utils.c"
+#include "flat_math.c"
 
 #include <stdio.h>
 #include <string.h>
@@ -407,8 +403,8 @@ static void render_clear(Renderer *r) {
   r->num_text_vertices = 0;
 }
 
-static LoadImageTextureFromFile load_image_texture_from_file;
-static LoadFontFromFile load_font_from_file;
+static LOAD_IMAGE_TEXTURE_FROM_FILE(load_image_texture_from_file);
+static LOAD_FONT_FROM_FILE(load_font_from_file);
 
 void init(void* mem, int mem_size, Funs dfuns) {
   Memory *m = mem;
