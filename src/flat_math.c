@@ -1,6 +1,8 @@
 #define MAX(a,b) ((a) < (b) ? (b) : (a))
 #include <math.h>
 
+#define PI 3.14159265f
+
 static unsigned int random(unsigned int *r) {
   return *r = 1103515245 * *r + 12345;
 }

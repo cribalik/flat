@@ -62,7 +62,13 @@ typedef struct {
   /* sprites */
   GLuint
     sprites_vertex_array, sprite_vertex_buffer,
-    sprite_shader, sprite_view_location;
+    sprite_shader,
+    /* locations */
+    sprite_camera_loc,
+    sprite_far_z_loc,
+    sprite_near_z_loc,
+    sprite_nearsize_loc
+    ;
   Texture sprite_atlas;
   SpriteVertex sprite_vertices[256];
   int num_sprites;
@@ -78,7 +84,7 @@ typedef struct {
   Glyph glyphs[RENDERER_LAST_CHAR - RENDERER_FIRST_CHAR];
 
   /* camera */
-  #define RENDERER_CAMERA_HEIGHT 2
+  #define RENDERER_CAMERA_HEIGHT 5
   v3 camera_pos;
 } Renderer;
 
@@ -88,7 +94,7 @@ typedef struct {
   Renderer renderer;
   Stack stack;
   char stack_data[128*1024*1024];
-} Memory;
+} State;
 
 
 static void print(const char* fmt, ...);
@@ -193,7 +199,7 @@ static int physics_rect_collide(Rect a, Rect b) {
   return !(a.x1 < b.x0 || a.x0 > b.x1 || a.y0 > b.y1 || a.y1 < b.y1);
 }
 
-static void handle_collision(Memory *m, Entity *e, float dt) {
+static void handle_collision(State *s, Entity *e, float dt) {
   int i,j;
   float w,h;
 
@@ -211,11 +217,11 @@ static void handle_collision(Memory *m, Entity *e, float dt) {
     x1 = x0 + e->vel.x * dt;
     y1 = y0 + e->vel.y * dt;
 
-    for (j = 0; j < m->num_entities; ++j) {
+    for (j = 0; j < s->num_entities; ++j) {
       float wx0,wy0,wx1,wy1, nx_tmp,ny_tmp, t_tmp;
       Entity *target;
 
-      target = m->entities + j;
+      target = s->entities + j;
       if (target == e)
         continue;
 
@@ -288,11 +294,11 @@ static void handle_collision(Memory *m, Entity *e, float dt) {
   e->pos.y += e->vel.y*dt;
 }
 
-static int entity_push(Memory *mem, Entity e) {
-  if (mem->num_entities >= ARRAY_LEN(mem->entities))
+static int entity_push(State *state, Entity e) {
+  if (state->num_entities >= ARRAY_LEN(state->entities))
     return 1;
 
-  mem->entities[mem->num_entities++] = e;
+  state->entities[state->num_entities++] = e;
   return 0;
 }
 
@@ -406,21 +412,21 @@ static void render_clear(Renderer *r) {
 static LOAD_IMAGE_TEXTURE_FROM_FILE(load_image_texture_from_file);
 static LOAD_FONT_FROM_FILE(load_font_from_file);
 
-void init(void* mem, int mem_size, Funs dfuns) {
-  Memory *m = mem;
-  assert(mem_size >= (int)sizeof(Memory));
-  memset(m, 0, sizeof(Memory));
+void init(void* state, int mem_size, Funs dfuns) {
+  State *s = state;
+  assert(mem_size >= (int)sizeof(State));
+  memset(s, 0, sizeof(State));
 
   /* Init function pointers */
   load_image_texture_from_file = dfuns.load_image_texture_from_file;
   load_font_from_file = dfuns.load_font_from_file;
 
   /* Init stack */
-  stack_init(&m->stack, m->stack_data, sizeof(m->stack_data));
+  stack_init(&s->stack, s->stack_data, sizeof(s->stack_data));
 
   /* Init renderer */
   {
-    Renderer* r = &m->renderer;
+    Renderer* r = &s->renderer;
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -485,7 +491,10 @@ void init(void* mem, int mem_size, Funs dfuns) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, r->sprite_atlas.id);
     glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
-    r->sprite_view_location = glGetUniformLocation(r->sprite_shader, "camera");
+    r->sprite_camera_loc = glGetUniformLocation(r->sprite_shader, "camera");
+    r->sprite_far_z_loc = glGetUniformLocation(r->sprite_shader, "far_z");
+    r->sprite_near_z_loc = glGetUniformLocation(r->sprite_shader, "near_z");
+    r->sprite_nearsize_loc = glGetUniformLocation(r->sprite_shader, "nearsize");
     gl_ok_or_die;
   }
 
@@ -494,7 +503,7 @@ void init(void* mem, int mem_size, Funs dfuns) {
     Entity e = {0};
     e.type = ENTITY_TYPE_PLAYER;
     e.hitbox = line_create(-0.5, -0.5, 0.5, 0.5);
-    entity_push(m, e);
+    entity_push(s, e);
   }
 
   /* Create walls */
@@ -503,28 +512,28 @@ void init(void* mem, int mem_size, Funs dfuns) {
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(0, -4, 0);
     e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
-    entity_push(m, e);
+    entity_push(s, e);
   }
   {
     Entity e = {0};
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(-4, 0, 0);
     e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
-    entity_push(m, e);
+    entity_push(s, e);
   }
   {
     Entity e = {0};
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(4, 0, 0);
     e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
-    entity_push(m, e);
+    entity_push(s, e);
   }
   {
     Entity e = {0};
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(0, 4, 0);
     e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
-    entity_push(m, e);
+    entity_push(s, e);
   }
 }
 
@@ -532,7 +541,11 @@ static void print(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
   while (*fmt) {
-    if (*fmt != '%') {putchar(*fmt++); continue;}
+    if (*fmt != '%') {
+      putchar(*fmt++);
+      continue;
+    }
+
     ++fmt;
     switch (*fmt++) {
       case '%': {
@@ -555,7 +568,7 @@ static void print(const char* fmt, ...) {
 
       case 'e': {
         Entity* e = va_arg(args, Entity*);
-        print("%s: pos: %v2 hitbox: %r", entity_type_names[e->type], &e->pos, &e->hitbox);
+        print("%s: pos: %v3 hitbox: %r", entity_type_names[e->type], &e->pos, &e->hitbox);
       } break;
 
       case 's': {
@@ -587,15 +600,15 @@ static void print(const char* fmt, ...) {
   va_end(args);
 }
 
-int main_loop(void* mem, long ms, Input input) {
+int main_loop(void* memory, long ms, Input input) {
   static long last_ms;
-  Memory* m;
+  State* s;
   Renderer* renderer;
   float dt;
   int i;
 
-  m = (Memory*)mem;
-  renderer = &m->renderer;
+  s = (State*)memory;
+  renderer = &s->renderer;
   dt = (ms - last_ms) / 1000.0f;
   dt = dt > 0.05f ? 0.05f : dt;
   last_ms = ms;
@@ -604,8 +617,8 @@ int main_loop(void* mem, long ms, Input input) {
   render_clear(renderer);
 
   /* Update entities */
-  for (i = 0; i < m->num_entities; ++i) {
-    Entity *e = m->entities + i;
+  for (i = 0; i < s->num_entities; ++i) {
+    Entity *e = s->entities + i;
 
     ENUM_CHECK(ENTITY_TYPE, e->type);
 
@@ -626,18 +639,19 @@ int main_loop(void* mem, long ms, Input input) {
 
         e->vel.y -= dt * 25.0f;
         
-        handle_collision(m, e, dt);
+        handle_collision(s, e, dt);
 
-        render_anim_sprite(&m->renderer, GET3(e->pos), 1, 1, ANIMATION_STATE_PLAYER, e->animation_time, 1);
-        render_text(&m->renderer, entity_type_names[e->type], GET3(e->pos), 0.1f, 1);
-        m->renderer.camera_pos = e->pos;
-        m->renderer.camera_pos.z += RENDERER_CAMERA_HEIGHT;
+        render_anim_sprite(&s->renderer, GET3(e->pos), 1, 1, ANIMATION_STATE_PLAYER, e->animation_time, 1);
+        render_text(&s->renderer, entity_type_names[e->type], GET3(e->pos), 0.1f, 1);
+        s->renderer.camera_pos = e->pos;
+        print("%e\n", e);
+        s->renderer.camera_pos.z += RENDERER_CAMERA_HEIGHT;
 
         #undef PLAYER_ACC
         break;
 
       case ENTITY_TYPE_WALL:
-        render_anim_sprite(&m->renderer, GET3(e->pos), GET2(rect_size(e->hitbox)), ANIMATION_STATE_PLAYER, e->animation_time, 1);
+        render_anim_sprite(&s->renderer, GET3(e->pos), GET2(rect_size(e->hitbox)), ANIMATION_STATE_PLAYER, e->animation_time, 1);
         break;
 
       case ENTITY_TYPE_MONSTER:
@@ -654,16 +668,16 @@ int main_loop(void* mem, long ms, Input input) {
   {
     static unsigned int t;
     t += dt;
-    render_anim_sprite(&m->renderer, 0.1, 0.1, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
-    render_anim_sprite(&m->renderer, -0.3, 0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
-    render_anim_sprite(&m->renderer, 0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
-    render_anim_sprite(&m->renderer, -0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
+    render_anim_sprite(&s->renderer, 0.1, 0.1, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
+    render_anim_sprite(&s->renderer, -0.3, 0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
+    render_anim_sprite(&s->renderer, 0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
+    render_anim_sprite(&s->renderer, -0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
   }
 
   #if 0
     puts("********* Entities *********");
-    for (i = 0; i < m->num_entities; ++i)
-      print("%e\n", &m->entities[i]);
+    for (i = 0; i < s->num_entities; ++i)
+      print("%e\n", &s->entities[i]);
 
     puts("********* Sprite Vertices *********");
     for (i = 0; i < renderer->num_sprites; ++i)
@@ -676,7 +690,19 @@ int main_loop(void* mem, long ms, Input input) {
 
   glUseProgram(renderer->sprite_shader);
 
-  glUniform3f(renderer->sprite_view_location, GET3(renderer->camera_pos));
+  /* send camera position to shader */
+  {
+    float w,h, far_z,near_z, fov;
+    fov = PI/3.0f;
+    far_z = -10.0f;
+    near_z = -0.5f;
+    w = - 2.0f * near_z * tan(fov/2);
+    h = w * 9.0f / 16.0f;
+    glUniform3f(renderer->sprite_camera_loc, GET3(renderer->camera_pos));
+    glUniform1f(renderer->sprite_far_z_loc, far_z);
+    glUniform1f(renderer->sprite_near_z_loc, near_z);
+    glUniform2f(renderer->sprite_nearsize_loc, w, h);
+  }
   gl_ok_or_die;
 
   /* draw sprites */

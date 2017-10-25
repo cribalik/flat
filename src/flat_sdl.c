@@ -102,7 +102,7 @@ int main(int argc, const char** argv) {
   Init init;
 
   /* SDL stuff */
-  int screen_w = 800, screen_h = 600;
+  int screen_w = 1280, screen_h = 720;
   SDL_Window *window;
   SDL_GLContext gl_context = 0;
 
