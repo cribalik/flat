@@ -1,8 +1,3 @@
-#ifndef FLAT_RENDER_H
-#define FLAT_RENDER_H
-
-#include "flat_math.c"
-
 typedef struct {
   GLuint id;
   v2i size;
@@ -56,4 +51,3 @@ typedef struct {
   v3 camera_pos;
 } Renderer;
 
-#endif /* FLAT_RENDER_H */

@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 200112L
+#include "flat_math.c"
 #include "flat_utils.c"
-#include "flat_render.h"
 #include "flat_platform_api.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>

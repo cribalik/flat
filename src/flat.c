@@ -1,5 +1,5 @@
+#include "flat_math.c"
 #include "flat_utils.c"
-#include "flat_render.h"
 #include "flat_platform_api.h"
 
 #include <stdio.h>

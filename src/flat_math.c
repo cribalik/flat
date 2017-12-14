@@ -19,7 +19,7 @@ static int next_pow2(int x) {
 }
 
 static int equalf(float a, float b) {
-  return abs(a-b) < 0.00001;
+  return fabs(a-b) < 0.00001;
 }
 
 static float sqrt_inv(float number) {

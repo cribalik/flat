@@ -3,7 +3,6 @@
 #include <string.h>
 #include <stddef.h>
 #include "flat_gl.h"
-#include "flat_render.h"
 
 #include <stdarg.h>
 
@@ -494,30 +493,5 @@ static void _gl_ok_or_die(const char* file, int line) {
 }
 
 
-
-
-
-/*************/
-/*** INPUT ***/
-/*************/
-typedef enum Button {
-  BUTTON_NULL,
-  BUTTON_A,
-  BUTTON_B,
-  BUTTON_X,
-  BUTTON_Y,
-  BUTTON_UP,
-  BUTTON_DOWN,
-  BUTTON_LEFT,
-  BUTTON_RIGHT,
-  BUTTON_START,
-  BUTTON_SELECT,
-  BUTTON_COUNT
-} Button;
-
-typedef struct Input {
-  char was_pressed[BUTTON_COUNT], is_down[BUTTON_COUNT];
-  float lx, ly, rx, ry;
-} Input;
 
 
