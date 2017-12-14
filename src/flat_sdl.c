@@ -13,6 +13,9 @@
 #define STBTT_STATIC
 #include "flat_ttf.c"
 
+#define GL_FUN(ret, name, par) ret (*name) par;
+#include "flat_glfuns.incl"
+#undef GL_FUN
 
 /* ======= Platform api ======= */
 
@@ -137,13 +140,11 @@ int main(int argc, const char** argv) {
     sdl_abort();
 
   /* Load gl functions */
-  #if 0
   {
-    #define GLFUN(name, prototype) *(void**) (&name) = SDL_GL_GetProcAddress(#name);
-    #include "flat_gl.h"
-    #undef GLFUN
+    #define GL_FUN(name, prototype) *(void**) (&name) = (void*)SDL_GL_GetProcAddress(#name);
+    #include "flat_glfuns.incl"
+    #undef GL_FUN
   }
-  #endif
 
   glViewport(0, 0, screen_w, screen_h);
 

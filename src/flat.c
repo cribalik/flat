@@ -409,17 +409,17 @@ static void render_clear(Renderer *r) {
   r->num_text_vertices = 0;
 }
 
-static LOAD_IMAGE_TEXTURE_FROM_FILE(load_image_texture_from_file);
-static LOAD_FONT_FROM_FILE(load_font_from_file);
+static LoadImageTextureFromFile load_image_texture_from_file;
+static LoadFontFromFile load_font_from_file;
 
-void init(void* state, int mem_size, Funs dfuns) {
-  State *s = state;
-  assert(mem_size >= (int)sizeof(State));
+GAME_INIT(init) {
+  State *s = memory;
+  assert(memory_size >= (int)sizeof(State));
   memset(s, 0, sizeof(State));
 
   /* Init function pointers */
-  load_image_texture_from_file = dfuns.load_image_texture_from_file;
-  load_font_from_file = dfuns.load_font_from_file;
+  load_image_texture_from_file = function_ptrs.load_image_texture_from_file;
+  load_font_from_file = function_ptrs.load_font_from_file;
 
   /* Init stack */
   stack_init(&s->stack, s->stack_data, sizeof(s->stack_data));
@@ -600,7 +600,7 @@ static void print(const char* fmt, ...) {
   va_end(args);
 }
 
-int main_loop(void* memory, long ms, Input input) {
+GAME_MAIN_LOOP(main_loop) {
   static long last_ms;
   State* s;
   Renderer* renderer;
@@ -638,7 +638,7 @@ int main_loop(void* memory, long ms, Input input) {
         e->animation_time += dt;
 
         e->vel.y -= dt * 25.0f;
-        
+
         handle_collision(s, e, dt);
 
         render_anim_sprite(&s->renderer, GET3(e->pos), 1, 1, ANIMATION_STATE_PLAYER, e->animation_time, 1);

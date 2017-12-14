@@ -2,9 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
-#define GL_GLEXT_PROTOTYPES
-#include <GL/gl.h>
-#include <GL/glext.h>
 #include "flat_gl.h"
 
 #include <stdarg.h>
@@ -532,14 +529,19 @@ typedef struct Glyph {
   float offset_x, offset_y, advance; /* Glyph offset info */
 } Glyph;
 
-#define LOAD_IMAGE_TEXTURE_FROM_FILE(name) void (*name)(const char* filename, GLuint* result, int* w, int* h)
+#define LOAD_IMAGE_TEXTURE_FROM_FILE(name) void name(const char* filename, GLuint* result, int* w, int* h)
+typedef LOAD_IMAGE_TEXTURE_FROM_FILE((*LoadImageTextureFromFile));
 
-#define LOAD_FONT_FROM_FILE(name) void (*name)(const char* filename, GLuint gl_texture, int w, int h, unsigned char first_char, unsigned char last_char, float height, Glyph *out_glyphs)
+#define LOAD_FONT_FROM_FILE(name) void name(const char* filename, GLuint gl_texture, int w, int h, unsigned char first_char, unsigned char last_char, float height, Glyph *out_glyphs)
+typedef LOAD_FONT_FROM_FILE((*LoadFontFromFile));
 
 typedef struct Funs {
-  LOAD_IMAGE_TEXTURE_FROM_FILE(load_image_texture_from_file);
-  LOAD_FONT_FROM_FILE(load_font_from_file);
+  LoadImageTextureFromFile load_image_texture_from_file;
+  LoadFontFromFile load_font_from_file;
 } Funs;
 
-typedef int (*MainLoop)(void* memory, long ms, Input input);
-typedef int (*Init)(void* memory, int memory_size, Funs function_ptrs);
+#define GAME_MAIN_LOOP(name) int name(void* memory, long ms, Input input)
+typedef GAME_MAIN_LOOP((*MainLoop));
+
+#define GAME_INIT(name) int name(void* memory, int memory_size, Funs function_ptrs)
+typedef GAME_INIT((*Init));
