@@ -9,16 +9,7 @@
 	"folders":
 	[
 		{
-			"path": "C:\\Users\\Christopher\\Documents\\GitHub\\flat"
-		},
-		{
-			"path": "C:\\Users\\Christopher\\Downloads\\handmade_hero_199_source\\handmade_hero_day_120_source"
-		},
-		{
-			"path": "C:\\Users\\Christopher\\Downloads\\SDL2-2.0.7\\SDL2-2.0.7\\src"
-		},
-		{
-			"path": "C:\\Users\\Christopher\\Downloads\\SDL2-2.0.7\\SDL2-2.0.7\\include"
+			"path": "../"
 		}
 	],
 	"settings":

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stddef.h>
 #include "flat_gl.h"
+#include "flat_render.h"
 
 #include <stdarg.h>
 
@@ -520,28 +521,3 @@ typedef struct Input {
 } Input;
 
 
-
-/********************/
-/*** PLATFORM API ***/
-/********************/
-typedef struct Glyph {
-  unsigned short x0, y0, x1, y1; /* Position in image */
-  float offset_x, offset_y, advance; /* Glyph offset info */
-} Glyph;
-
-#define LOAD_IMAGE_TEXTURE_FROM_FILE(name) void name(const char* filename, GLuint* result, int* w, int* h)
-typedef LOAD_IMAGE_TEXTURE_FROM_FILE((*LoadImageTextureFromFile));
-
-#define LOAD_FONT_FROM_FILE(name) void name(const char* filename, GLuint gl_texture, int w, int h, unsigned char first_char, unsigned char last_char, float height, Glyph *out_glyphs)
-typedef LOAD_FONT_FROM_FILE((*LoadFontFromFile));
-
-typedef struct Funs {
-  LoadImageTextureFromFile load_image_texture_from_file;
-  LoadFontFromFile load_font_from_file;
-} Funs;
-
-#define GAME_MAIN_LOOP(name) int name(void* memory, long ms, Input input)
-typedef GAME_MAIN_LOOP((*MainLoop));
-
-#define GAME_INIT(name) int name(void* memory, int memory_size, Funs function_ptrs)
-typedef GAME_INIT((*Init));
