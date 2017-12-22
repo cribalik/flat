@@ -25,6 +25,10 @@ typedef enum {
   ENTITY_TYPE_COUNT
 } EntityType;
 
+typedef enum {
+  DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT
+} Direction;
+
 typedef struct {
   EntityType type;
   v3 pos;
@@ -34,7 +38,8 @@ typedef struct {
   Rect hitbox;
 
   /* animation */
-  unsigned int animation_time;
+  float animation_time;
+  Direction last_direction;
 
   /* Monster stuff */
   v2 target;
@@ -198,18 +203,44 @@ static Glyph glyph_get(Renderer *r, char c) {
 
 typedef enum {
   ANIMATION_STATE_NULL,
-  ANIMATION_STATE_PLAYER,
+  ANIMATION_STATE_PLAYER_STANDING_LEFT,
+  ANIMATION_STATE_PLAYER_STANDING_RIGHT,
+  ANIMATION_STATE_PLAYER_WALKING_LEFT,
+  ANIMATION_STATE_PLAYER_WALKING_RIGHT,
   ANIMATION_STATE_COUNT
 } AnimationState;
 
-static Rect tex_pos[] = {
-  {0, 0, 0.1, 0.1}
+typedef struct {
+  float x, y, w, h, dx, dy;
+  int columns, num;
+  float time;
+} SpriteSheetAnimation;
+
+static SpriteSheetAnimation spriteanim[] = {
+  {0},
+  {0.0f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 4, 1, 0.5f},
+  {0.25f, 0.0f, 0.25f, 0.25f, 0.25f, 0.25f, 4, 1, 0.5f},
+  {0.0f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 4, 4, 0.2f},
+  {0.0f, 0.0f, 0.25f, 0.25f, 0.25f, 0.25f, 4, 4, 0.2f}
 };
 
-static Rect get_anim_tex(AnimationState which, unsigned int time) {
-  (void)time;
+STATIC_ASSERT(ANIMATION_STATE_COUNT == ARRAY_LEN(spriteanim), all_tex_pos_defined);
+
+static Rect get_anim_tex(AnimationState which, float time) {
+  SpriteSheetAnimation s;
+  int n;
+  Rect r;
+
   ENUM_CHECK(ANIMATION_STATE, which);
-  return tex_pos[which];
+
+  s = spriteanim[which];
+  n = fmod(time, (s.num*s.time)) / s.time;
+  r.x0 = s.x + (n % s.columns)*s.dx;
+  r.y0 = s.y - (n / s.columns)*s.dy;
+  r.x1 = r.x0+s.w;
+  r.y1 = r.y0+s.h;
+
+  return r;
 }
 
 static float calc_string_width(Renderer *r, const char *str) {
@@ -269,9 +300,10 @@ static void render_sprite(Renderer *r, float x, float y, float z, float w, float
   /* TODO: get x and y positions of sprite in sprite sheet */
   SpriteVertex *v;
 
-  if (center)
-    x -= w/2,
+  if (center) {
+    x -= w/2;
     y -= h/2;
+  }
 
   assert(r->sprite_atlas.id);
   assert(r->num_sprites + 6 < (int)ARRAY_LEN(r->sprite_vertices));
@@ -286,7 +318,7 @@ static void render_sprite(Renderer *r, float x, float y, float z, float w, float
   r->num_sprites += 6;
 }
 
-static void render_anim_sprite(Renderer *r, float x, float y, float z, float w, float h, AnimationState anim_state, unsigned int anim_time, int center) {
+static void render_anim_sprite(Renderer *r, float x, float y, float z, float w, float h, AnimationState anim_state, float anim_time, int center) {
   Rect tex = get_anim_tex(anim_state, anim_time);
   render_sprite(r, x, y, z, w, h, GET_LINE(tex), center);
 }
@@ -297,56 +329,6 @@ static void render_clear(Renderer *r) {
   gl_ok_or_die;
   r->num_sprites = 0;
   r->num_text_vertices = 0;
-}
-
-GAME_INIT(init) {
-  State *s = memory;
-  assert(memory_size >= (int)sizeof(State));
-  memset(s, 0, sizeof(State));
-
-  (void)function_ptrs;
-
-  /* Init stack */
-  stack_init(&s->stack, s->stack_data, sizeof(s->stack_data));
-
-  /* Create player */
-  {
-    Entity e = {0};
-    e.type = ENTITY_TYPE_PLAYER;
-    e.hitbox = line_create(-0.5, -0.5, 0.5, 0.5);
-    entity_push(s, e);
-  }
-
-  /* Create walls */
-  {
-    Entity e = {0};
-    e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(0, -4, 0);
-    e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
-    entity_push(s, e);
-  }
-  {
-    Entity e = {0};
-    e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(-4, 0, 0);
-    e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
-    entity_push(s, e);
-  }
-  {
-    Entity e = {0};
-    e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(4, 0, 0);
-    e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
-    entity_push(s, e);
-  }
-  {
-    Entity e = {0};
-    e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(0, 4, 0);
-    e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
-    entity_push(s, e);
-  }
-  return 0;
 }
 
 static void print(const char* fmt, ...) {
@@ -412,6 +394,56 @@ static void print(const char* fmt, ...) {
   va_end(args);
 }
 
+GAME_INIT(init) {
+  State *s = memory;
+  assert(memory_size >= (int)sizeof(State));
+  memset(s, 0, sizeof(State));
+
+  (void)function_ptrs;
+
+  /* Init stack */
+  stack_init(&s->stack, s->stack_data, sizeof(s->stack_data));
+
+  /* Create player */
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_PLAYER;
+    e.hitbox = line_create(-0.5, -0.5, 0.5, 0.5);
+    entity_push(s, e);
+  }
+
+  /* Create walls */
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_WALL;
+    e.pos = v3_create(0, -4, 0);
+    e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
+    entity_push(s, e);
+  }
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_WALL;
+    e.pos = v3_create(-4, 0, 0);
+    e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
+    entity_push(s, e);
+  }
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_WALL;
+    e.pos = v3_create(4, 0, 0);
+    e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
+    entity_push(s, e);
+  }
+  {
+    Entity e = {0};
+    e.type = ENTITY_TYPE_WALL;
+    e.pos = v3_create(0, 4, 0);
+    e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
+    entity_push(s, e);
+  }
+  return 0;
+}
+
 GAME_MAIN_LOOP(main_loop) {
   static long last_ms;
   State* s;
@@ -437,31 +469,66 @@ GAME_MAIN_LOOP(main_loop) {
       case ENTITY_TYPE_COUNT:
         break;
 
-      case ENTITY_TYPE_PLAYER:
-        #define PLAYER_ACC 10
+      case ENTITY_TYPE_PLAYER: {
+        #define PLAYER_ACC 15
+        #define PLAYER_MAXSPEED 3.0f
+        #define PLAYER_SKID 7.0f
 
-        e->vel.x += dt*PLAYER_ACC*input.is_down[BUTTON_RIGHT];
-        e->vel.x -= dt*PLAYER_ACC*input.is_down[BUTTON_LEFT];
-        if (input.was_pressed[BUTTON_UP])
-          e->vel.y = 10.0f;
+        float speed;
 
-        e->animation_time += dt;
+        if (!input.is_down[BUTTON_RIGHT] && e->vel.x > 0.0f)
+          e->vel.x -= fmin(PLAYER_SKID * dt, e->vel.x);
+        if (!input.is_down[BUTTON_LEFT] && e->vel.x < 0.0f)
+          e->vel.x += fmin(PLAYER_SKID * dt, -e->vel.x);
+        if (!input.is_down[BUTTON_UP] && e->vel.y > 0.0f)
+          e->vel.y -= fmin(PLAYER_SKID * dt, e->vel.y);
+        if (!input.is_down[BUTTON_DOWN] && e->vel.y < 0.0f)
+          e->vel.y += fmin(PLAYER_SKID * dt, -e->vel.y);
 
-        e->vel.y -= dt * 25.0f;
+        if (!input.is_down[BUTTON_RIGHT] && !input.is_down[BUTTON_LEFT])
+          e->vel.x -= sign(e->vel.x) * fmin(dt*PLAYER_SKID, fabs(e->vel.x));
+        if (!input.is_down[BUTTON_UP] && !input.is_down[BUTTON_DOWN])
+          e->vel.y -= sign(e->vel.y) * fmin(dt*PLAYER_SKID, fabs(e->vel.y));
+
+        e->vel.x += dt*PLAYER_ACC * input.is_down[BUTTON_RIGHT];
+        e->vel.x -= dt*PLAYER_ACC * input.is_down[BUTTON_LEFT];
+        e->vel.y += dt*PLAYER_ACC * input.is_down[BUTTON_UP];
+        e->vel.y -= dt*PLAYER_ACC * input.is_down[BUTTON_DOWN];
+
+        if (e->vel.x > 0)
+          e->last_direction = DIR_RIGHT;
+        if (e->vel.x < 0)
+          e->last_direction = DIR_LEFT;
+
+        speed = length(e->vel.x, e->vel.y);
+        if (speed > PLAYER_MAXSPEED) {
+          e->vel.x = e->vel.x * PLAYER_MAXSPEED / speed;
+          e->vel.y = e->vel.y * PLAYER_MAXSPEED / speed;
+        }
 
         handle_collision(s, e, dt);
 
-        render_anim_sprite(renderer, GET3(e->pos), 1, 1, ANIMATION_STATE_PLAYER, e->animation_time, 1);
+        {
+          AnimationState as = ANIMATION_STATE_PLAYER_STANDING_LEFT;
+          if (fabs(speed) < 0.001f)
+            as = e->last_direction == DIR_LEFT ? ANIMATION_STATE_PLAYER_STANDING_LEFT : ANIMATION_STATE_PLAYER_STANDING_RIGHT;
+          else
+            as = e->last_direction == DIR_LEFT ? ANIMATION_STATE_PLAYER_WALKING_LEFT : ANIMATION_STATE_PLAYER_WALKING_RIGHT;
+          render_anim_sprite(renderer, GET3(e->pos), 1, 1, as, e->animation_time, 1);
+        }
+
+
         render_text(renderer, entity_type_names[e->type], GET3(e->pos), 0.1f, 1);
         renderer->camera_pos = e->pos;
-        print("%e\n", e);
         renderer->camera_pos.z += RENDERER_CAMERA_HEIGHT;
 
         #undef PLAYER_ACC
-        break;
+        #undef PLAYER_MAXSPEED
+        #undef PLAYER_SKID
+      } break;
 
       case ENTITY_TYPE_WALL:
-        render_anim_sprite(renderer, GET3(e->pos), GET2(rect_size(e->hitbox)), ANIMATION_STATE_PLAYER, e->animation_time, 1);
+        render_anim_sprite(renderer, GET3(e->pos), GET2(rect_size(e->hitbox)), ANIMATION_STATE_PLAYER_WALKING_LEFT, e->animation_time, 1);
         break;
 
       case ENTITY_TYPE_MONSTER:
@@ -473,15 +540,17 @@ GAME_MAIN_LOOP(main_loop) {
       case ENTITY_TYPE_THING:
         break;
     }
+
+    e->animation_time += dt;
   }
 
   {
     static unsigned int t;
     t += dt;
-    render_anim_sprite(renderer, 0.1, 0.1, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
-    render_anim_sprite(renderer, -0.3, 0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
-    render_anim_sprite(renderer, 0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
-    render_anim_sprite(renderer, -0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER, t, 1);
+    render_anim_sprite(renderer, 0.1, 0.1, 0, 1, 1, ANIMATION_STATE_PLAYER_WALKING_LEFT, t, 1);
+    render_anim_sprite(renderer, -0.3, 0.3, 0, 1, 1, ANIMATION_STATE_PLAYER_WALKING_LEFT, t, 1);
+    render_anim_sprite(renderer, 0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER_WALKING_LEFT, t, 1);
+    render_anim_sprite(renderer, -0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER_WALKING_LEFT, t, 1);
   }
 
   #if 0
@@ -491,7 +560,7 @@ GAME_MAIN_LOOP(main_loop) {
 
     puts("********* Sprite Vertices *********");
     for (i = 0; i < renderer->num_sprites; ++i)
-      printf("%f %f %f\n", renderer->sprite_vertices[i].pos.x, renderer->sprite_vertices[i].pos.y, renderer->sprite_vertices[i].pos.z);
+      print("%v2\n", &renderer->sprite_vertices[i].tex);
 
     puts("********* Text Vertices *********");
     for (i = 0; i < renderer->num_text_vertices; ++i)

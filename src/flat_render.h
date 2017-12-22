@@ -10,8 +10,11 @@ typedef struct {
 
 static SpriteVertex spritevertex_create(float x, float y, float z, float tx, float ty) {
   SpriteVertex result;
-  result.pos = v3_create(x,y,z);
-  result.tex = v2_create(tx,ty);
+  result.pos.x = x;
+  result.pos.y = y;
+  result.pos.z = z;
+  result.tex.x = tx;
+  result.tex.y = ty;
   return result;
 }
 typedef SpriteVertex TextVertex;

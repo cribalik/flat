@@ -4,7 +4,6 @@
 #include "flat_platform_api.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
-#include <SOIL/SOIL.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <errno.h>
@@ -14,6 +13,9 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
 #include "flat_ttf.c"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 /* ======= Platform api ======= */
 
@@ -88,10 +90,12 @@ void load_image_texture_from_file(const char* filename, GLuint* result, int* w, 
   gl_ok_or_die;
 
   {
-    unsigned char* image = SOIL_load_image(filename, w, h, 0, SOIL_LOAD_RGBA);
-    if (!image) die("Failed to load image %s: %s\n", filename, strerror(errno));
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, *w, *h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
-    SOIL_free_image_data(image);
+    unsigned char *data;
+    stbi_set_flip_vertically_on_load(1);
+    data = stbi_load(filename, w, h, 0, 4);
+    if (!data) die("Failed to load image %s: %s\n", filename, strerror(errno));
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, *w, *h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    stbi_image_free(data);
     gl_ok_or_die;
   }
 

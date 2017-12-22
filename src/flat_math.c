@@ -1,9 +1,11 @@
 #define MAX(a,b) ((a) < (b) ? (b) : (a))
+#define MIN(a,b) ((b) < (a) ? (b) : (a))
+
 #include <math.h>
 
 #define PI 3.14159265f
 
-static unsigned int random(unsigned int *r) {
+static unsigned int randint(unsigned int *r) {
   return *r = 1103515245 * *r + 12345;
 }
 
@@ -47,12 +49,19 @@ static float length(float dx, float dy) {
   return sqrt(dx*dx + dy*dy);
 }
 
+static float sign(float x) {
+  return x < 0.0f ? -1.0f : 1.0f;
+}
+
 static float length_inv(float dx, float dy) {
   return sqrt_inv(dx*dx + dy*dy);
 }
 
 static void normalize(float *x, float *y) {
-  float l = length(*x, *y);
+  float l;
+  if (*x == 0.0f && *y == 0.0f)
+    return;
+  l = length(*x, *y);
   *x /= l;
   *y /= l;
 }
@@ -193,6 +202,7 @@ static Rect rect_expand(Rect a, v2 size) {
 #define rect_max(r) (*(v2*)&(r).x1)
 
 #define GET2(name) (name).x, (name).y
+#define GET2P(name) &((name).x), &((name).y)
 #define GET3(name) (name).x, (name).y, (name).z
 #define GET_LINE(name) (name).x0, (name).y0, (name).x1, (name).y1
 #define GET_LINEP(name) &(name).x0, &(name).y0, &(name).x1, &(name).y1
