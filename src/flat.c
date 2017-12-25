@@ -29,10 +29,17 @@ typedef enum {
   DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT
 } Direction;
 
+typedef enum {
+  PRIORITY_UNIMPORTANT = -1,
+  PRIORITY_MAP = 0,
+  PRIORITY_PLAYER = 1
+} EntityPriority;
+
 typedef struct {
   EntityType type;
   v3 pos;
   v2 vel;
+  EntityPriority priority;
 
   /* physics */
   Rect hitbox;
@@ -53,6 +60,11 @@ typedef struct {
 } State;
 
 static void print(const char* fmt, ...);
+#ifdef DEBUG
+  #define debug print
+#else
+  #define debug
+#endif
 
 static const char* entity_type_names[] = {
   "Null",
@@ -189,11 +201,30 @@ static void handle_collision(State *s, Entity *e, float dt) {
   e->pos.y += e->vel.y*dt;
 }
 
-static int entity_push(State *state, Entity e) {
-  if (state->num_entities >= ARRAY_LEN(state->entities))
-    return 1;
+static void entity_evict(Entity *e) {
+  switch (e->type) {
+    default: debug("evicting entity %e\n", e);
+  }
+}
 
-  state->entities[state->num_entities++] = e;
+static int entity_push(State *state, Entity e) {
+  Entity *dest;
+  /* if full, find one with less priority */
+  if (state->num_entities < ARRAY_LEN(state->entities))
+    dest = &state->entities[state->num_entities++];
+  else {
+    int i;
+    dest = &state->entities[0];
+    for (i = 1; i < state->num_entities; ++i)
+      if (state->entities[i].priority < dest->priority)
+        dest = &state->entities[i];
+
+    if (dest->priority >= e.priority)
+      return 1;
+    entity_evict(dest);
+  }
+
+  *dest = e;
   return 0;
 }
 
@@ -436,6 +467,7 @@ GAME_INIT(init) {
   }
   {
     Entity e = {0};
+    e.priority = 1;
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(0, 4, 0);
     e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
