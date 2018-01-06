@@ -6,6 +6,7 @@ typedef struct {
 typedef struct {
   v3 pos;
   v2 tex;
+  v3 normal;
 } SpriteVertex;
 
 static SpriteVertex spritevertex_create(float x, float y, float z, float tx, float ty) {
@@ -36,8 +37,9 @@ typedef struct {
     sprite_nearsize_loc
     ;
   Texture sprite_atlas;
-  SpriteVertex sprite_vertices[256];
-  int num_sprites;
+
+  SpriteVertex vertices[256];
+  int num_vertices;
 
   /* text */
   #define RENDERER_FIRST_CHAR 32

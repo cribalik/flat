@@ -38,11 +38,11 @@ typedef enum {
 typedef struct {
   EntityType type;
   v3 pos;
-  v2 vel;
+  v3 vel;
   EntityPriority priority;
 
   /* physics */
-  Rect hitbox;
+  Cube hitbox;
 
   /* animation */
   float animation_time;
@@ -76,7 +76,56 @@ static const char* entity_type_names[] = {
 };
 STATIC_ASSERT(ARRAY_LEN(entity_type_names) == ENTITY_TYPE_COUNT, all_entity_names_entered);
 
-static void wall_test(float x0, float y0, float x1, float y1, float wx0, float wy0, float wx1, float wy1, float *t_out, float *nx_out, float *ny_out) {
+/* in: line, plane, plane origin */
+static void collision_plane(float x0, float y0, float z0, float x1, float y1, float z1, float px0, float py0, float pz0, float px1, float py1, float pz1, float px2, float py2, float pz2, float *t_out, float *nx_out, float *ny_out, float *nz_out) {
+  float nx,ny,nz, d, t,u,v, dx,dy,dz;
+
+  dx = x1-x0;
+  dy = y1-y0;
+  dz = z1-z0;
+
+  px1 -= px0;
+  py1 -= py0;
+  pz1 -= pz0;
+  px2 -= px0;
+  py2 -= py0;
+  pz2 -= pz0;
+
+  nx = py1*pz2 - pz1*py1,
+  ny = pz1*px2 - px1*pz1,
+  nz = px1*py2 - py1*px1;
+
+  d = dx*nx + dy*ny + dz*nz;
+  if (fabs(d) < 0.0001f)
+    return;
+
+  x0 -= px0;
+  y0 -= py0;
+  z0 -= pz0;
+
+  t = (x0*nx + y0*ny + z0*nz) / d;
+  if (t < 0.0f || t > 1.0f)
+    return;
+
+  x0 += t*dx;
+  y0 += t*dy;
+  z0 += t*dz;
+
+  u = x0*px1 + y0*py1 + z0*pz1;
+  v = x0*px2 + y0*py2 + z0*pz2;
+  if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f)
+    return;
+
+  if (t < *t_out) {
+    *t_out = t;
+    *nx_out = nx;
+    *ny_out = ny;
+    *nz_out = nz;
+  }
+
+}
+
+static void collision_line(float x0, float y0, float x1, float y1, float wx0, float wy0, float wx1, float wy1, float *t_out, float *nx_out, float *ny_out) {
   float ux = x1 - x0;
   float uy = y1 - y0;
   float vx = wx1 - wx0;
@@ -108,24 +157,27 @@ static int physics_rect_collide(Rect a, Rect b) {
 
 static void handle_collision(State *s, Entity *e, float dt) {
   int i,j;
-  float w,h;
+  float w,h,d;
 
   w = (e->hitbox.x1 - e->hitbox.x0)/2.0f;
   h = (e->hitbox.y1 - e->hitbox.y0)/2.0f;
+  d = (e->hitbox.z1 - e->hitbox.z0)/2.0f;
 
   for (i = 0; i < 4; ++i) {
-    float t, x0,y0,x1,y1, nx, ny;
+    float t, x0,y0,z0,x1,y1,z1, nx,ny,nz;
     Entity *hit;
 
     hit = 0;
     t = 2.0f;
     x0 = e->hitbox.x0 + e->pos.x + w;
     y0 = e->hitbox.y0 + e->pos.y + h;
+    z0 = e->hitbox.z0 + e->pos.z + d;
     x1 = x0 + e->vel.x * dt;
     y1 = y0 + e->vel.y * dt;
+    z1 = z0 + e->vel.z * dt;
 
     for (j = 0; j < s->num_entities; ++j) {
-      float wx0,wy0,wx1,wy1, nx_tmp,ny_tmp, t_tmp;
+      float wx0,wy0,wx1,wy1,wz0,wz1, nx_tmp,ny_tmp,nz_tmp, t_tmp;
       Entity *target;
 
       target = s->entities + j;
@@ -137,14 +189,18 @@ static void handle_collision(State *s, Entity *e, float dt) {
       wx1 = target->hitbox.x1 + w + target->pos.x;
       wy0 = target->hitbox.y0 - h + target->pos.y;
       wy1 = target->hitbox.y1 + h + target->pos.y;
+      wz0 = target->hitbox.z0 - h + target->pos.z;
+      wz1 = target->hitbox.z1 + h + target->pos.z;
 
       /* does line hit the box ? */
       t_tmp = 2.0f;
       /* lines need to be clockwise oriented to get correct normals */
-      wall_test(x0, y0, x1, y1, wx0, wy1, wx1, wy1, &t_tmp, &nx_tmp, &ny_tmp); /* top */
-      wall_test(x0, y0, x1, y1, wx1, wy0, wx0, wy0, &t_tmp, &nx_tmp, &ny_tmp); /* bottom */
-      wall_test(x0, y0, x1, y1, wx0, wy0, wx0, wy1, &t_tmp, &nx_tmp, &ny_tmp); /* left */
-      wall_test(x0, y0, x1, y1, wx1, wy1, wx1, wy0, &t_tmp, &nx_tmp, &ny_tmp); /* right */
+      collision_plane(x0, y0, z0, x1, y1, z1, wx0, wy0, wz0, wx0, wy1, wz0, wx0, wy0, wz1, &t_tmp, &nx_tmp, &ny_tmp, &nz_tmp);
+      collision_plane(x0, y0, z0, x1, y1, z1, wx1, wy0, wz0, wx1, wy1, wz0, wx1, wy0, wz1, &t_tmp, &nx_tmp, &ny_tmp, &nz_tmp);
+      collision_plane(x0, y0, z0, x1, y1, z1, wx0, wy0, wz0, wx1, wy0, wz0, wx0, wy0, wz1, &t_tmp, &nx_tmp, &ny_tmp, &nz_tmp);
+      collision_plane(x0, y0, z0, x1, y1, z1, wx0, wy1, wz0, wx1, wy1, wz0, wx0, wy1, wz1, &t_tmp, &nx_tmp, &ny_tmp, &nz_tmp);
+      collision_plane(x0, y0, z0, x1, y1, z1, wx0, wy0, wz0, wx1, wy0, wz0, wx0, wy1, wz0, &t_tmp, &nx_tmp, &ny_tmp, &nz_tmp);
+      collision_plane(x0, y0, z0, x1, y1, z1, wx0, wy0, wz1, wx1, wy0, wz1, wx0, wy1, wz1, &t_tmp, &nx_tmp, &ny_tmp, &nz_tmp);
 
       if (t_tmp == 2.0f)
         continue;
@@ -154,16 +210,17 @@ static void handle_collision(State *s, Entity *e, float dt) {
         t = t_tmp;
         nx = nx_tmp;
         ny = ny_tmp;
+        nz = nz_tmp;
       }
     }
 
     if (!hit)
       break;
 
-    normalize(&nx, &ny);
+    normalize2(&nx, &ny);
 
     if (hit->type == ENTITY_TYPE_WALL) {
-      float vx,vy, ax,ay, bx,by, dot;
+      float vx,vy,vz, ax,ay,az, bx,by,bz, dot;
       /**
        * Glide along the wall
        *
@@ -173,21 +230,26 @@ static void handle_collision(State *s, Entity *e, float dt) {
        */
       vx = x1 - x0;
       vy = y1 - y0;
-      dot = vx*nx + vy*ny;
+      vz = z1 - z0;
+      dot = vx*nx + vy*ny + vz*nz;
 
       /* go up against the wall */
       ax = nx * dot * t;
       ay = ny * dot * t;
+      az = nz * dot * t;
       /* back off a bit */
       ax += nx * 0.0001f;
       ay += ny * 0.0001f;
+      az += nz * 0.0001f;
       e->pos.x = x0 + ax;
       e->pos.y = y0 + ay;
+      e->pos.z = z0 + az;
 
       /* remove the part that goes into the wall, and glide the rest */
       bx = vx - dot * nx;
       by = vy - dot * ny;
-      e->vel = v2_create(bx/dt, by/dt);
+      bz = vz - dot * nz;
+      e->vel = v3_create(bx/dt, by/dt, bz/dt);
 
       /*printf("(%f,%f) (%f,%f) (%f,%f) (%f,%f)\n", nx, ny, vx, vy, ax, ay, bx, by);*/
     }
@@ -199,6 +261,7 @@ static void handle_collision(State *s, Entity *e, float dt) {
 
   e->pos.x += e->vel.x*dt;
   e->pos.y += e->vel.y*dt;
+  e->pos.z += e->vel.z*dt;
 }
 
 static void entity_evict(Entity *e) {
@@ -327,38 +390,72 @@ static void render_text(Renderer *r, const char *str, float pos_x, float pos_y, 
   }
 }
 
-static void render_sprite(Renderer *r, float x, float y, float z, float w, float h, float tx0, float ty0, float tx1, float ty1, int center) {
-  /* TODO: get x and y positions of sprite in sprite sheet */
+static void render_quad(Renderer *r, v3 a, v3 b, v3 c, v3 d, v2 ta, v2 tb, v2 tc, v2 td) {
   SpriteVertex *v;
+  v3 da = normalize3v(v3_sub(b,a)), db = normalize3v(v3_sub(d,a));
+  v3 n = normalize3v(v3_cross(da, db));
 
-  if (center) {
-    x -= w/2;
-    y -= h/2;
-  }
+  if (r->num_vertices + 6 >= ARRAY_LEN(r->vertices))
+    return;
 
-  assert(r->sprite_atlas.id);
-  assert(r->num_sprites + 6 < (int)ARRAY_LEN(r->sprite_vertices));
-
-  v = r->sprite_vertices + r->num_sprites;
-  *v++ = spritevertex_create(x, y, z, tx0, ty0);
-  *v++ = spritevertex_create(x + w, y, z, tx1, ty0);
-  *v++ = spritevertex_create(x, y + h, z, tx0, ty1);
-  *v++ = spritevertex_create(x, y + h, z, tx0, ty1);
-  *v++ = spritevertex_create(x + w, y, z, tx1, ty0);
-  *v++ = spritevertex_create(x + w, y + h, z, tx1, ty1);
-  r->num_sprites += 6;
+  v = r->vertices + r->num_vertices;
+  v->pos = a; v->tex = ta; v->normal = normalize3v(v3_sub(n, da)); ++v;
+  v->pos = b; v->tex = tb; v->normal = normalize3v(v3_sub(n, db)); ++v;
+  v->pos = c; v->tex = tc; v->normal = normalize3v(v3_addv(n, da)); ++v;
+  v->pos = a; v->tex = ta; v->normal = normalize3v(v3_sub(n, da)); ++v;
+  v->pos = c; v->tex = tc; v->normal = normalize3v(v3_addv(n, da)); ++v;
+  v->pos = d; v->tex = td; v->normal = normalize3v(v3_addv(n, db)); ++v;
+  r->num_vertices += 6;
 }
 
-static void render_anim_sprite(Renderer *r, float x, float y, float z, float w, float h, AnimationState anim_state, float anim_time, int center) {
+static void render_cube(Renderer *r, v3 pos, Cube cube) {
+  float dx,dy,dz;
+  v3 a,b,c,d,e,f,g,h;
+  v2 t = {0, 0};
+
+  pos.x += cube.x0;
+  pos.y += cube.y0;
+  pos.z += cube.z0;
+
+  dx = cube.x1-cube.x0;
+  dy = cube.y1-cube.y0;
+  dz = cube.z1-cube.z0;
+
+  a = b = c = d = pos;
+  b.x += dx;
+  c.x += dx;
+  c.y += dy;
+  d.y += dy;
+  e = a, f = b, g = c, h = d;
+  e.z = f.z = g.z = h.z = pos.z+dz;
+
+  render_quad(r, a, b, c, d, t, t, t, t);
+  render_quad(r, a, b, f, e, t, t, t, t);
+  render_quad(r, a, e, h, d, t, t, t, t);
+  render_quad(r, e, f, g, h, t, t, t, t);
+  render_quad(r, b, c, g, f, t, t, t, t);
+  render_quad(r, c, d, h, g, t, t, t, t);
+}
+
+static void render_anim_sprite(Renderer *r, v3 pos, float w, float h, AnimationState anim_state, float anim_time) {
+  v3 a,b,c,d;
+  v2 ta,tb,tc,td;
   Rect tex = get_anim_tex(anim_state, anim_time);
-  render_sprite(r, x, y, z, w, h, GET_LINE(tex), center);
+
+  a = b = c = d = pos;
+  b.x += w;
+  c.x += w, c.y += h;
+  d.y += h;
+
+  ta.x = tex.x0, ta.y = tex.y0;
+  tb.x = tex.x1, tb.y = tex.y0;
+  tc.x = tex.x1, tc.y = tex.y1;
+  td.x = tex.x0, td.y = tex.y1;
+  render_quad(r, a, b, c, d, ta, tb, tc, td);
 }
 
 static void render_clear(Renderer *r) {
-  glClearColor(0.0, 0.0, 0.0, 1.0);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  gl_ok_or_die;
-  r->num_sprites = 0;
+  r->num_vertices = 0;
   r->num_text_vertices = 0;
 }
 
@@ -439,7 +536,7 @@ GAME_INIT(init) {
   {
     Entity e = {0};
     e.type = ENTITY_TYPE_PLAYER;
-    e.hitbox = line_create(-0.5, -0.5, 0.5, 0.5);
+    e.hitbox = cube_create(-0.5, -0.5, -0.5, 0.5, 0.5, 0.5);
     entity_push(s, e);
   }
 
@@ -448,21 +545,21 @@ GAME_INIT(init) {
     Entity e = {0};
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(0, -4, 0);
-    e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
+    e.hitbox = cube_create(-4, -0.1f, -2, 4, 0.1f, 2);
     entity_push(s, e);
   }
   {
     Entity e = {0};
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(-4, 0, 0);
-    e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
+    e.hitbox = cube_create(-0.1f, -4, -2, 0.1f, 4, 2);
     entity_push(s, e);
   }
   {
     Entity e = {0};
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(4, 0, 0);
-    e.hitbox = rect_create(-0.1f, -4, 0.1f, 4);
+    e.hitbox = cube_create(-0.1f, -4, -2, 0.1f, 4, 2);
     entity_push(s, e);
   }
   {
@@ -470,7 +567,7 @@ GAME_INIT(init) {
     e.priority = 1;
     e.type = ENTITY_TYPE_WALL;
     e.pos = v3_create(0, 4, 0);
-    e.hitbox = rect_create(-4, -0.1f, 4, 0.1f);
+    e.hitbox = cube_create(-4, -0.1f, -2, 4, 0.1f, 2);
     entity_push(s, e);
   }
   return 0;
@@ -532,7 +629,7 @@ GAME_MAIN_LOOP(main_loop) {
         if (e->vel.x < 0)
           e->last_direction = DIR_LEFT;
 
-        speed = length(e->vel.x, e->vel.y);
+        speed = length2(e->vel.x, e->vel.y);
         if (speed > PLAYER_MAXSPEED) {
           e->vel.x = e->vel.x * PLAYER_MAXSPEED / speed;
           e->vel.y = e->vel.y * PLAYER_MAXSPEED / speed;
@@ -546,11 +643,11 @@ GAME_MAIN_LOOP(main_loop) {
             as = e->last_direction == DIR_LEFT ? ANIMATION_STATE_PLAYER_STANDING_LEFT : ANIMATION_STATE_PLAYER_STANDING_RIGHT;
           else
             as = e->last_direction == DIR_LEFT ? ANIMATION_STATE_PLAYER_WALKING_LEFT : ANIMATION_STATE_PLAYER_WALKING_RIGHT;
-          render_anim_sprite(renderer, GET3(e->pos), 1, 1, as, e->animation_time, 1);
+          render_anim_sprite(renderer, e->pos, 1, 1, as, e->animation_time);
         }
 
 
-        render_text(renderer, entity_type_names[e->type], GET3(e->pos), 0.1f, 1);
+        /*render_text(renderer, entity_type_names[e->type], GET3(e->pos), 0.1f, 1);*/
         renderer->camera_pos = e->pos;
         renderer->camera_pos.z += RENDERER_CAMERA_HEIGHT;
 
@@ -559,9 +656,9 @@ GAME_MAIN_LOOP(main_loop) {
         #undef PLAYER_SKID
       } break;
 
-      case ENTITY_TYPE_WALL:
-        render_anim_sprite(renderer, GET3(e->pos), GET2(rect_size(e->hitbox)), ANIMATION_STATE_PLAYER_WALKING_LEFT, e->animation_time, 1);
-        break;
+      case ENTITY_TYPE_WALL: {
+        render_cube(renderer, e->pos, e->hitbox);
+      } break;
 
       case ENTITY_TYPE_MONSTER:
         break;
@@ -576,23 +673,14 @@ GAME_MAIN_LOOP(main_loop) {
     e->animation_time += dt;
   }
 
-  {
-    static unsigned int t;
-    t += dt;
-    render_anim_sprite(renderer, 0.1, 0.1, 0, 1, 1, ANIMATION_STATE_PLAYER_WALKING_LEFT, t, 1);
-    render_anim_sprite(renderer, -0.3, 0.3, 0, 1, 1, ANIMATION_STATE_PLAYER_WALKING_LEFT, t, 1);
-    render_anim_sprite(renderer, 0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER_WALKING_LEFT, t, 1);
-    render_anim_sprite(renderer, -0.3, -0.3, 0, 1, 1, ANIMATION_STATE_PLAYER_WALKING_LEFT, t, 1);
-  }
-
   #if 0
     puts("********* Entities *********");
     for (i = 0; i < s->num_entities; ++i)
       print("%e\n", &s->entities[i]);
 
     puts("********* Sprite Vertices *********");
-    for (i = 0; i < renderer->num_sprites; ++i)
-      print("%v2\n", &renderer->sprite_vertices[i].tex);
+    for (i = 0; i < renderer->num_vertices; ++i)
+      print("%v3\n", &renderer->vertices[i].pos);
 
     puts("********* Text Vertices *********");
     for (i = 0; i < renderer->num_text_vertices; ++i)

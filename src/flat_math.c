@@ -45,8 +45,12 @@ static float lensq(float x0, float y0, float x1, float y1) {
   return dx*dx + dy*dy;
 }
 
-static float length(float dx, float dy) {
+static float length2(float dx, float dy) {
   return sqrt(dx*dx + dy*dy);
+}
+
+static float length3(float dx, float dy, float dz) {
+  return sqrt(dx*dx + dy*dy + dz*dz);
 }
 
 static float sign(float x) {
@@ -57,13 +61,23 @@ static float length_inv(float dx, float dy) {
   return sqrt_inv(dx*dx + dy*dy);
 }
 
-static void normalize(float *x, float *y) {
+static void normalize2(float *x, float *y) {
   float l;
   if (*x == 0.0f && *y == 0.0f)
     return;
-  l = length(*x, *y);
+  l = length2(*x, *y);
   *x /= l;
   *y /= l;
+}
+
+static void normalize3(float *x, float *y, float *z) {
+  float l;
+  if (*x == 0.0f && *y == 0.0f && *z == 0.0f)
+    return;
+  l = length3(*x, *y, *z);
+  *x /= l;
+  *y /= l;
+  *z /= l;
 }
 
 #define line_length(l) length((l).x1 - (l).x0, (l).y1 - (l).y0)
@@ -111,12 +125,31 @@ static v4 v4_create(float x, float y, float z, float w) {
   return r;
 }
 
+static v3 v3_sub(v3 a, v3 b) {
+  v3 r = {a.x-b.x, a.y-b.y, a.z-b.z};
+  return r;
+}
+
+static v3 normalize3v(v3 v) {
+  normalize3(&v.x, &v.y, &v.z);
+  return v;
+}
+
+static v3 v3_cross(v3 a, v3 b) {
+  v3 r = {
+    a.y*b.z - a.z*b.y,
+    a.z*b.x - a.x*b.z,
+    a.x*b.y - a.y*b.x
+  };
+  return r;
+}
+
 static v2 v3_xy(v3 v) {
   return v2_create(v.x, v.y);
 }
 
 static float v2_len(v2 v) {
-  return length(v.x, v.y);
+  return length2(v.x, v.y);
 }
 
 static float v2_lensq(v2 v) {
@@ -151,6 +184,10 @@ static v3 v3_add(v3 v, float x, float y, float z) {
   return v3_create(v.x+x, v.y+y, v.z+z);
 }
 
+static v3 v3_addv(v3 a, v3 b) {
+  return v3_add(a, b.x, b.y, b.z);
+}
+
 static v2 v2i_to_v2(v2i v) {
   return v2_create(v.x, v.y);
 }
@@ -159,6 +196,15 @@ typedef struct {
   float x0,y0,x1,y1;
 } Rect;
 typedef Rect Line;
+
+typedef struct {
+  float x0,y0,z0,x1,y1,z1;
+} Cube;
+
+static Cube cube_create(float x0, float y0, float z0, float x1, float y1, float z1) {
+  Cube c = {x0, y0, z0, x1, y1, z1};
+  return c;
+}
 
 static v2 rect_mid(Rect r) {
   return v2_create((r.x0 + r.x1)/2.0f, (r.y0 + r.y1)/2.0f);

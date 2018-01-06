@@ -230,6 +230,7 @@ int main(int argc, const char** argv) {
     Renderer *r = renderer;
 
     glEnable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     /* Load images into textures */
@@ -259,13 +260,15 @@ int main(int argc, const char** argv) {
       gl_ok_or_die;
       glGenBuffers(1, &r->sprite_vertex_buffer);
       glBindBuffer(GL_ARRAY_BUFFER, r->sprite_vertex_buffer);
-      glBufferData(GL_ARRAY_BUFFER, sizeof(r->sprite_vertices), 0, GL_DYNAMIC_DRAW);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(r->vertices), 0, GL_DYNAMIC_DRAW);
       gl_ok_or_die;
 
       glEnableVertexAttribArray(0);
-      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) 0);
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->vertices), (void*) 0);
       glEnableVertexAttribArray(1);
-      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->sprite_vertices), (void*) offsetof(SpriteVertex, tex));
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->vertices), (void*) offsetof(SpriteVertex, tex));
+      glEnableVertexAttribArray(2);
+      glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(*r->vertices), (void*) offsetof(SpriteVertex, normal));
     }
 
     /* Allocate text buffer */
@@ -357,6 +360,11 @@ int main(int argc, const char** argv) {
           break;
       }
     }
+
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    gl_ok_or_die;
+
     err = main_loop(memory, SDL_GetTicks(), input, renderer);
     if (err) return 0;
 
@@ -378,9 +386,9 @@ int main(int argc, const char** argv) {
     /* draw sprites */
     glBindVertexArray(renderer->sprites_vertex_array);
     glBindBuffer(GL_ARRAY_BUFFER, renderer->sprite_vertex_buffer);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_sprites*sizeof(*renderer->sprite_vertices), renderer->sprite_vertices);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, renderer->num_vertices*sizeof(*renderer->vertices), renderer->vertices);
     glBindTexture(GL_TEXTURE_2D, renderer->sprite_atlas.id);
-    glDrawArrays(GL_TRIANGLES, 0, renderer->num_sprites);
+    glDrawArrays(GL_TRIANGLES, 0, renderer->num_vertices);
     gl_ok_or_die;
 
     /* draw text */
