@@ -1,3 +1,9 @@
+#ifdef _MSC_VER
+  #define OS_WINDOWS
+#else
+  #define OS_LINUX
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,10 +70,10 @@ static void* array__grow(void* a, int size, int num) {
 /*** @UTILS ***/
 /**************/
 #define STATIC_ASSERT(expr, name) typedef char static_assert_##name[expr?1:-1]
-#define align(x, val) align_mask(x, val-1)
-#define align_mask(x, mask) (((x)+(mask)) & ~(mask))
-#define containerof(ptr, type, member) (((type)*)((char*)ptr - offsetof(type, member)))
-#define alignof(type) offsetof(struct {char a; type b;}, b)
+#define ALIGN(x, val) ALIGN_MASK(x, val-1)
+#define ALIGN_MASK(x, mask) (((x)+(mask)) & ~(mask))
+#define CONTAINEROF(ptr, type, member) (((type)*)((char*)ptr - offsetof(type, member)))
+#define ALIGNOF(type) offsetof(struct {char a; type b;}, b)
 #define ARRAY_LEN(a) ((int)(sizeof(a)/sizeof(*a)))
 #define ENUM_FOREACH(i, name) for (i = name##_NULL+1; i < name##_COUNT; ++i)
 #define ENUM_CHECK(name, value) ((value <= name##_NULL || value >= name##_COUNT) ? die("Enum " #name " out of range (%i)\n", value), 0 : 0)
@@ -77,7 +83,7 @@ static void* array__grow(void* a, int size, int num) {
 /*************************/
 /*** @FIXED WIDTH TYPES ***/
 /*************************/
-#ifdef _MSC_VER
+#ifdef OS_WINDOWS
   typedef __int8 i8;
   typedef __int16 i16;
   typedef __int32 i32;
@@ -140,9 +146,9 @@ STATIC_ASSERT(sizeof(u64) == 8, u64_is_8_bytes);
  * ptr-validity: yes
  */
 
-typedef struct {
+struct Stack {
   unsigned char *begin, *end, *curr;
-} Stack;
+};
 
 static int stack_init(Stack *stack, void *mem, long size);
 #define stack_clear(stack) ((stack)->curr = (stack)->begin)
@@ -159,10 +165,10 @@ static int stack_init(Stack *stack, void *mem, long size);
  * Uses malloc for new stacks
  */
 
-typedef struct {
+struct LStack {
   Stack stack;
   long block_size;
-} LStack;
+};
 
 /* The size is the stack size, NOT the size of the blocks in the linked list.
  * If you for example want blocks of size 4096,
@@ -190,10 +196,10 @@ static void lstack_clear(LStack *ls);
  *   and the memory given is properly aligned for both the intended type, and void*
  */
 
-typedef struct {
+struct Block {
   unsigned char *next;
   long item_size;
-} Block;
+};
 
 static int block_init(Block *block, void *mem, long num_items, long item_size);
 static int block_add_block(Block *block, void *mem, long num_items);
@@ -208,10 +214,10 @@ static void block_put(Block *block, void *at);
  * Uses malloc for new list items
  */
 
-typedef struct {
+struct LBlock {
   Block block;
   long num_items;
-} LBlock;
+};
 
 /* The size is the stack size, NOT the size of the blocks in the linked list.
  * If you for example want blocks of size 4096,
@@ -255,14 +261,14 @@ static int stack_init(Stack *stack, void *mem, long size) {
   if (!stack || !mem || !size)
     return mem_errno = MEM_INVALID_ARG;
 
-  stack->begin = stack->curr = mem;
+  stack->begin = stack->curr = (unsigned char*)mem;
   stack->end = stack->begin + size;
 
   return 0;
 }
 
 static void* stack_push_ex(Stack *stack, long size, int align) {
-  stack->curr = mem__align(stack->curr, align);
+  stack->curr = (unsigned char*)mem__align(stack->curr, align);
   if (stack->curr + size > stack->end) {
     mem_errno = MEM_FULL;
     return 0;
@@ -276,7 +282,7 @@ static void* stack_push_ex(Stack *stack, long size, int align) {
 static void* stack__push_val(Stack *stack, long size, int align, void *ptr) {
   unsigned char *p;
 
-  p = stack_push_ex(stack, size, align);
+  p = (unsigned char*)stack_push_ex(stack, size, align);
   if (!p)
     return 0;
 
@@ -292,6 +298,7 @@ static int lstack_init(LStack *ls, long size) {
   memset(&ls->stack, 0, sizeof(ls->stack));
   return lstack__newblock(ls);
 }
+
 
 static int lstack__newblock(LStack *ls) {
   void *m;
@@ -343,7 +350,7 @@ static void lstack_pop(LStack *ls, void *to) {
     free(tmp);
   }
 
-  s->end = to;
+  s->end = (unsigned char*)to;
 }
 
 static void lstack_clear(LStack *ls) {
@@ -387,13 +394,13 @@ static void* block_get(Block *block) {
     return 0;
   }
 
-  block->next = *(void**)p;
+  block->next = (unsigned char*)*(void**)p;
   return p;
 }
 
 static void block_put(Block *block, void *at) {
   *(void**)at = block->next;
-  block->next = at;
+  block->next = (unsigned char*)at;
 }
 
 static int block_add_block(Block *block, void *mem, long num_items) {
@@ -459,13 +466,23 @@ static void* lblock_get(LBlock *lb) {
 /***************/
 /*** @LOGGING ***/
 /***************/
-#define die printf("%s:%i: error: ", __FILE__, __LINE__),_die
+static FILE* get_log_file() {
+  static FILE *f;
+  if (!f)
+    f = fopen("log.txt", "a");
+  if (!f)
+    abort();
+  return f;
+}
+#define die fprintf(get_log_file(), "%s:%i: error: ", __FILE__, __LINE__),_die
 static void _die(const char* fmt, ...) {
+  FILE *f = get_log_file();
+
   va_list args;
   va_start(args, fmt);
-  vfprintf(stderr, fmt, args);
+  vfprintf(f, fmt, args);
   va_end(args);
-  fflush(stderr);
+  fflush(f);
   abort();
 }
 
@@ -488,9 +505,9 @@ static void _gl_ok_or_die(const char* file, int line) {
     case GL_INVALID_FRAMEBUFFER_OPERATION: error = "INVALID_FRAMEBUFFER_OPERATION"; break;
     default: error = "unknown error";
   };
-  fprintf(stderr, "GL error at %s:%u: (%u) %s\n", file, line, error_code, error);
-  exit(1);
+  die("GL error at %s:%u: (%u) %s\n", file, line, error_code, error);
 }
+
 
 
 

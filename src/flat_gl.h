@@ -1,23 +1,20 @@
-#if defined(_WIN32) && !defined(APIENTRY) && !defined(__CYGWIN__) && !defined(__SCITECH_SNAP__)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN 1
-#endif
-#include <windows.h>
+#ifndef FLAT_GL_H
+#define FLAT_GL_H
+
+#if defined(OS_WINDOWS)
+	#ifndef WIN32_LEAN_AND_MEAN
+	#define WIN32_LEAN_AND_MEAN 1
+	#endif
+	#include <windows.h>
+	#define GLAPI __stdcall
+#else
+  #define GLAPI
 #endif
 
-#ifndef APIENTRY
-#define APIENTRY
-#endif
-#ifndef APIENTRYP
-#define APIENTRYP APIENTRY *
-#endif
-#ifndef GLAPI
-#define GLAPI extern
-#endif
+#include <GL/gl.h>
 
 #define GL_GLEXT_VERSION 20171125
 
-#include <GL/gl.h>
 #include <stddef.h>
 
 typedef char GLchar;
@@ -64,3 +61,5 @@ typedef ptrdiff_t GLintptr;
 #define GL_TEXTURE29                      0x84DD
 #define GL_TEXTURE30                      0x84DE
 #define GL_TEXTURE31                      0x84DF
+
+#endif

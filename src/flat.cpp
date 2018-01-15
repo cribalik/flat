@@ -1,5 +1,5 @@
-#include "flat_math.c"
-#include "flat_utils.c"
+#include "flat_math.h"
+#include "flat_utils.cpp"
 #include "flat_platform_api.h"
 
 #include <stdio.h>
@@ -10,12 +10,13 @@
 #include <stdarg.h>
 #include <math.h>
 
-typedef struct {
+
+struct Bitmap {
   char* data;
   int w,h;
-} Bitmap;
+};
 
-typedef enum {
+enum EntityType {
   ENTITY_TYPE_NULL,
   ENTITY_TYPE_PLAYER,
   ENTITY_TYPE_WALL,
@@ -23,41 +24,17 @@ typedef enum {
   ENTITY_TYPE_DERPER,
   ENTITY_TYPE_THING,
   ENTITY_TYPE_COUNT
-} EntityType;
+};
 
-typedef enum {
+enum Direction {
   DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT
-} Direction;
+};
 
-typedef enum {
+enum EntityPriority {
   PRIORITY_UNIMPORTANT = -1,
   PRIORITY_MAP = 0,
   PRIORITY_PLAYER = 1
-} EntityPriority;
-
-typedef struct {
-  EntityType type;
-  v3 pos;
-  v3 vel;
-  EntityPriority priority;
-
-  /* physics */
-  Cube hitbox;
-
-  /* animation */
-  float animation_time;
-  Direction last_direction;
-
-  /* Monster stuff */
-  v2 target;
-} Entity;
-
-typedef struct {
-  Entity entities[256];
-  int num_entities;
-  Stack stack;
-  char stack_data[128*1024*1024];
-} State;
+};
 
 static void print(const char* fmt, ...);
 #ifdef DEBUG
@@ -75,6 +52,31 @@ static const char* entity_type_names[] = {
   "Thing"
 };
 STATIC_ASSERT(ARRAY_LEN(entity_type_names) == ENTITY_TYPE_COUNT, all_entity_names_entered);
+
+struct Entity {
+  EntityType type;
+  v3 pos;
+  v3 vel;
+  EntityPriority priority;
+
+  /* physics */
+  Cube hitbox;
+
+  /* animation */
+  float animation_time;
+  Direction last_direction;
+
+  /* Monster stuff */
+  v2 target;
+};
+
+struct State {
+  Entity entities[256];
+  int num_entities;
+  Stack stack;
+  char stack_data[128*1024*1024];
+};
+
 
 /* in: line, plane, plane origin */
 static void collision_plane(float x0, float y0, float z0, float x1, float y1, float z1, float px0, float py0, float pz0, float px1, float py1, float pz1, float px2, float py2, float pz2, float *t_out, float *nx_out, float *ny_out, float *nz_out) {
@@ -217,7 +219,7 @@ static void handle_collision(State *s, Entity *e, float dt) {
     if (!hit)
       break;
 
-    normalize2(&nx, &ny);
+    normalize(&nx, &ny);
 
     if (hit->type == ENTITY_TYPE_WALL) {
       float vx,vy,vz, ax,ay,az, bx,by,bz, dot;
@@ -249,7 +251,7 @@ static void handle_collision(State *s, Entity *e, float dt) {
       bx = vx - dot * nx;
       by = vy - dot * ny;
       bz = vz - dot * nz;
-      e->vel = v3_create(bx/dt, by/dt, bz/dt);
+      e->vel = v3{bx/dt, by/dt, bz/dt};
 
       /*printf("(%f,%f) (%f,%f) (%f,%f) (%f,%f)\n", nx, ny, vx, vy, ax, ay, bx, by);*/
     }
@@ -295,20 +297,20 @@ static Glyph glyph_get(Renderer *r, char c) {
   return r->glyphs[c - RENDERER_FIRST_CHAR];
 }
 
-typedef enum {
+enum AnimationState {
   ANIMATION_STATE_NULL,
   ANIMATION_STATE_PLAYER_STANDING_LEFT,
   ANIMATION_STATE_PLAYER_STANDING_RIGHT,
   ANIMATION_STATE_PLAYER_WALKING_LEFT,
   ANIMATION_STATE_PLAYER_WALKING_RIGHT,
   ANIMATION_STATE_COUNT
-} AnimationState;
+};
 
-typedef struct {
+struct SpriteSheetAnimation {
   float x, y, w, h, dx, dy;
   int columns, num;
   float time;
-} SpriteSheetAnimation;
+};
 
 static SpriteSheetAnimation spriteanim[] = {
   {0},
@@ -392,19 +394,19 @@ static void render_text(Renderer *r, const char *str, float pos_x, float pos_y, 
 
 static void render_quad(Renderer *r, v3 a, v3 b, v3 c, v3 d, v2 ta, v2 tb, v2 tc, v2 td) {
   SpriteVertex *v;
-  v3 da = normalize3v(v3_sub(b,a)), db = normalize3v(v3_sub(d,a));
-  v3 n = normalize3v(v3_cross(da, db));
+  v3 da = normalize(b-a), db = normalize(d-a);
+  v3 n = normalize(cross(da, db));
 
   if (r->num_vertices + 6 >= ARRAY_LEN(r->vertices))
     return;
 
   v = r->vertices + r->num_vertices;
-  v->pos = a; v->tex = ta; v->normal = normalize3v(v3_sub(n, da)); ++v;
-  v->pos = b; v->tex = tb; v->normal = normalize3v(v3_sub(n, db)); ++v;
-  v->pos = c; v->tex = tc; v->normal = normalize3v(v3_addv(n, da)); ++v;
-  v->pos = a; v->tex = ta; v->normal = normalize3v(v3_sub(n, da)); ++v;
-  v->pos = c; v->tex = tc; v->normal = normalize3v(v3_addv(n, da)); ++v;
-  v->pos = d; v->tex = td; v->normal = normalize3v(v3_addv(n, db)); ++v;
+  v->pos = a; v->tex = ta; v->normal = normalize(n-da); ++v;
+  v->pos = b; v->tex = tb; v->normal = normalize(n-db); ++v;
+  v->pos = c; v->tex = tc; v->normal = normalize(n+da); ++v;
+  v->pos = a; v->tex = ta; v->normal = normalize(n-da); ++v;
+  v->pos = c; v->tex = tc; v->normal = normalize(n+da); ++v;
+  v->pos = d; v->tex = td; v->normal = normalize(n+db); ++v;
   r->num_vertices += 6;
 }
 
@@ -522,8 +524,11 @@ static void print(const char* fmt, ...) {
   va_end(args);
 }
 
+
+extern "C" {
+
 GAME_INIT(init) {
-  State *s = memory;
+  State *s = (State*)memory;
   assert(memory_size >= (int)sizeof(State));
   memset(s, 0, sizeof(State));
 
@@ -534,7 +539,7 @@ GAME_INIT(init) {
 
   /* Create player */
   {
-    Entity e = {0};
+    Entity e = {};
     e.type = ENTITY_TYPE_PLAYER;
     e.hitbox = cube_create(-0.5, -0.5, -0.5, 0.5, 0.5, 0.5);
     entity_push(s, e);
@@ -542,31 +547,31 @@ GAME_INIT(init) {
 
   /* Create walls */
   {
-    Entity e = {0};
+    Entity e = {};
     e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(0, -4, 0);
+    e.pos = {0, -4, 0};
     e.hitbox = cube_create(-4, -0.1f, -2, 4, 0.1f, 2);
     entity_push(s, e);
   }
   {
-    Entity e = {0};
+    Entity e = {};
     e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(-4, 0, 0);
+    e.pos = {-4, 0, 0};
     e.hitbox = cube_create(-0.1f, -4, -2, 0.1f, 4, 2);
     entity_push(s, e);
   }
   {
-    Entity e = {0};
+    Entity e = {};
     e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(4, 0, 0);
+    e.pos = {4, 0, 0};
     e.hitbox = cube_create(-0.1f, -4, -2, 0.1f, 4, 2);
     entity_push(s, e);
   }
   {
-    Entity e = {0};
-    e.priority = 1;
+    Entity e = {};
+    e.priority = PRIORITY_PLAYER;
     e.type = ENTITY_TYPE_WALL;
-    e.pos = v3_create(0, 4, 0);
+    e.pos = {0, 4, 0};
     e.hitbox = cube_create(-4, -0.1f, -2, 4, 0.1f, 2);
     entity_push(s, e);
   }
@@ -629,7 +634,7 @@ GAME_MAIN_LOOP(main_loop) {
         if (e->vel.x < 0)
           e->last_direction = DIR_LEFT;
 
-        speed = length2(e->vel.x, e->vel.y);
+        speed = length(e->vel);
         if (speed > PLAYER_MAXSPEED) {
           e->vel.x = e->vel.x * PLAYER_MAXSPEED / speed;
           e->vel.y = e->vel.y * PLAYER_MAXSPEED / speed;
@@ -687,4 +692,6 @@ GAME_MAIN_LOOP(main_loop) {
       printf("%f %f %f\n", renderer->text_vertices[i].pos.x, renderer->text_vertices[i].pos.y, renderer->text_vertices[i].pos.z);
   #endif
   return input.was_pressed[BUTTON_START];
+}
+
 }

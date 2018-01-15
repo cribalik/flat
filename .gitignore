@@ -38,3 +38,8 @@ build
 
 assets
 !assets/shaders
+include
+
+# Visual Studio
+.vs
+

@@ -3,7 +3,7 @@
 /*************/
 /*** INPUT ***/
 /*************/
-typedef enum Button {
+enum Button {
   BUTTON_NULL,
   BUTTON_A,
   BUTTON_B,
@@ -16,20 +16,20 @@ typedef enum Button {
   BUTTON_START,
   BUTTON_SELECT,
   BUTTON_COUNT
-} Button;
+};
 
-typedef struct Input {
+struct Input {
   char was_pressed[BUTTON_COUNT], is_down[BUTTON_COUNT];
   float lx, ly, rx, ry;
-} Input;
+};
 
 
 /********************/
 /*** PLATFORM API ***/
 /********************/
-typedef struct Funs {
+struct Funs {
 	void *dummy;
-} Funs;
+};
 
 #define GAME_MAIN_LOOP(name) int name(void* memory, long ms, Input input, Renderer *renderer)
 typedef GAME_MAIN_LOOP((*MainLoop));

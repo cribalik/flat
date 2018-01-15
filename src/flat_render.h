@@ -1,13 +1,13 @@
-typedef struct {
+struct Texture {
   GLuint id;
   v2i size;
-} Texture;
+};
 
-typedef struct {
+struct SpriteVertex {
   v3 pos;
   v2 tex;
   v3 normal;
-} SpriteVertex;
+};
 
 static SpriteVertex spritevertex_create(float x, float y, float z, float tx, float ty) {
   SpriteVertex result;
@@ -20,12 +20,12 @@ static SpriteVertex spritevertex_create(float x, float y, float z, float tx, flo
 }
 typedef SpriteVertex TextVertex;
 
-typedef struct Glyph {
+struct Glyph {
   unsigned short x0, y0, x1, y1; /* Position in image */
   float offset_x, offset_y, advance; /* Glyph offset info */
-} Glyph;
+};
 
-typedef struct {
+struct Renderer {
   /* sprites */
   GLuint
     sprites_vertex_array, sprite_vertex_buffer,
@@ -54,5 +54,5 @@ typedef struct {
   /* camera */
   #define RENDERER_CAMERA_HEIGHT 5
   v3 camera_pos;
-} Renderer;
+};
 

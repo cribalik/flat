@@ -1,4 +1,5 @@
 
+GL_FUN(void, glActiveTexture, (GLenum texture))
 GL_FUN(void, glEnableVertexAttribArray, (GLuint index))
 GL_FUN(void, glVertexAttribPointer, (GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer))
 GL_FUN(void, glUseProgram, (GLuint program))

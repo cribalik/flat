@@ -1,6 +1,6 @@
 #define _POSIX_C_SOURCE 200112L
-#include "flat_math.c"
-#include "flat_utils.c"
+#include "flat_math.h"
+#include "flat_utils.cpp"
 #include "flat_platform_api.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
@@ -12,14 +12,14 @@
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
-#include "flat_ttf.c"
+#include "stb_truetype.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 /* ======= Platform api ======= */
 
-#define GL_FUN(ret, name, par) ret (*name) par;
+#define GL_FUN(ret, name, par) ret (GLAPI *name) par;
 #include "flat_glfuns.incl"
 #undef GL_FUN
 
@@ -111,8 +111,8 @@ void load_font_from_file(const char* filename, GLuint gl_texture, int tex_w, int
   FILE* f;
   int res;
 
-  ttf_mem = malloc(BUFFER_SIZE);
-  bitmap = malloc(tex_w * tex_h);
+  ttf_mem = (unsigned char*)malloc(BUFFER_SIZE);
+  bitmap = (unsigned char*)malloc(tex_w * tex_h);
   if (!ttf_mem || !bitmap) die("Failed to allocate memory for font: %s\n", strerror(errno));
 
   f = fopen(filename, "rb");
@@ -143,7 +143,7 @@ static Button key_to_button(Sint32 key) {
     case SDLK_LEFT: return BUTTON_LEFT;
     case SDLK_RIGHT: return BUTTON_RIGHT;
   }
-  return 0;
+  return BUTTON_NULL;
 }
 
 static i32 key_codes[] = {
@@ -161,41 +161,34 @@ static i32 key_codes[] = {
 };
 STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
 
-#define sdl_try(stmt) ((stmt) && (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__,SDL_GetError()), abort(),0))
-#define sdl_abort() (fprintf(stderr, "%s:%i error: %s\n", __FILE__, __LINE__, SDL_GetError()), abort())
+#define sdl_try(stmt) ((stmt) && (die("%s\n", SDL_GetError()),0))
+#define sdl_abort() die("%s\n", SDL_GetError())
 
-int main(int argc, const char** argv) {
+#ifdef OS_WINDOWS
+  int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
+#else
+  int main(int, const **char)
+#endif
+{
   int err;
-
-  /* dynamic linking to game */
-  MainLoop main_loop;
-  Init init;
-
-  /* SDL stuff */
-  int screen_w = 1280, screen_h = 720;
-  SDL_Window *window;
-  SDL_GLContext gl_context = 0;
 
   /* Api to game */
   #define MEMORY_SIZE 512*1024*1024
-  char* memory;
-  Renderer *renderer;
-  Input input = {0};
-
-  /* unused */
-  (void)argc, (void)argv;
+  Input input = {};
 
   /* Alloc memory */
-  memory = malloc(MEMORY_SIZE);
-  if (!memory)
+  char *memory = (char*)malloc(MEMORY_SIZE);
+  if (memory == NULL)
     die("Not enough memory");
 
   /* Alloc renderer */
-  renderer = (Renderer*)memory;
+  Renderer *renderer = (Renderer*)memory;
   memory += sizeof(*renderer);
 
   /* Fix for some builds of SDL 2.0.4, see https://bugs.gentoo.org/show_bug.cgi?id=610326 */
-  setenv("XMODIFIERS", "@im=none", 1);
+  #ifdef OS_LINUX
+    setenv("XMODIFIERS", "@im=none", 1);
+  #endif
 
   /* init SDL */
   sdl_try(SDL_Init(SDL_INIT_EVERYTHING));
@@ -205,36 +198,93 @@ int main(int argc, const char** argv) {
   sdl_try(SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3));
   sdl_try(SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3));
 
-  window = SDL_CreateWindow("Hello world",
+  /* SDL stuff */
+  const int screen_w = 1280, screen_h = 720;
+  SDL_Window *window = SDL_CreateWindow("Hello world",
                             SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                             screen_w, screen_h,
                             SDL_WINDOW_OPENGL);
   if (!window)
     sdl_abort();
 
-  gl_context = SDL_GL_CreateContext(window);
+  SDL_GLContext gl_context = SDL_GL_CreateContext(window);
   if (!gl_context)
     sdl_abort();
 
   /* Load gl functions */
   {
-    #define GL_FUN(ret, name, par) *(void**) (&name) = (void*)SDL_GL_GetProcAddress(#name);
+    #define GL_FUN(ret, name, par) \
+      *(void**) (&name) = (void*)SDL_GL_GetProcAddress(#name); \
+      if (!name) die("Couldn't load gl function "#name);
     #include "flat_glfuns.incl"
     #undef GL_FUN
   }
 
   glViewport(0, 0, screen_w, screen_h);
 
+  // #define LOL
+
+
   /* Init renderer */
   {
     Renderer *r = renderer;
-
     glEnable(GL_BLEND);
+    gl_ok_or_die;
     glEnable(GL_DEPTH_TEST);
+    gl_ok_or_die;
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    gl_ok_or_die;
+
+    /* Allocate sprite buffer */
+    glGenVertexArrays(1, &r->sprites_vertex_array);
+    gl_ok_or_die;
+    glGenVertexArrays(1, &r->text_vertex_array);
+    gl_ok_or_die;
+
+    glGenBuffers(1, &r->sprite_vertex_buffer);
+    gl_ok_or_die;
+    glGenBuffers(1, &r->text_vertex_buffer);
+    gl_ok_or_die;
+
+    glBindVertexArray(r->sprites_vertex_array);
+    gl_ok_or_die;
+    glBindBuffer(GL_ARRAY_BUFFER, r->sprite_vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(r->vertices), 0, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(SpriteVertex), (void*) 0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(SpriteVertex), (void*) offsetof(SpriteVertex, tex));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(SpriteVertex), (void*) offsetof(SpriteVertex, normal));
+
+    /* Allocate text buffer */
+    glBindVertexArray(r->text_vertex_array);
+    glBindBuffer(GL_ARRAY_BUFFER, r->text_vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(r->text_vertices), 0, GL_DYNAMIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) 0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) offsetof(SpriteVertex, tex));
+    glBindVertexArray(0);
+
+    /* Compile shaders */
+    r->sprite_shader = compile_shader("../../assets/shaders/sprite_vertex.glsl", "../../assets/shaders/sprite_fragment.glsl");
+    gl_ok_or_die;
+
+    /* Get/set uniforms */
+    glUseProgram(r->sprite_shader);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, r->sprite_atlas.id);
+    glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
+    r->sprite_camera_loc = glGetUniformLocation(r->sprite_shader, "camera");
+    r->sprite_far_z_loc = glGetUniformLocation(r->sprite_shader, "far_z");
+    r->sprite_near_z_loc = glGetUniformLocation(r->sprite_shader, "near_z");
+    r->sprite_nearsize_loc = glGetUniformLocation(r->sprite_shader, "nearsize");
+    gl_ok_or_die;
 
     /* Load images into textures */
-    load_image_texture_from_file("assets/spritesheet.png", &r->sprite_atlas.id, &r->sprite_atlas.size.x, &r->sprite_atlas.size.y);
+    load_image_texture_from_file("..\\..\\assets\\spritesheet.png", &r->sprite_atlas.id, &r->sprite_atlas.size.x, &r->sprite_atlas.size.y);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     /* Create font texture and read in font from file */
@@ -248,76 +298,40 @@ int main(int argc, const char** argv) {
       r->text_atlas.size.x = w;
       r->text_atlas.size.y = h;
 
-      load_font_from_file("assets/Roboto-Regular.ttf", r->text_atlas.id, r->text_atlas.size.x, r->text_atlas.size.y, RENDERER_FIRST_CHAR, RENDERER_LAST_CHAR, RENDERER_FONT_SIZE, r->glyphs);
+      load_font_from_file("..\\..\\assets\\Roboto-Regular.ttf", r->text_atlas.id, r->text_atlas.size.x, r->text_atlas.size.y, RENDERER_FIRST_CHAR, RENDERER_LAST_CHAR, RENDERER_FONT_SIZE, r->glyphs);
       glBindTexture(GL_TEXTURE_2D, r->text_atlas.id);
       glGenerateMipmap(GL_TEXTURE_2D);
     }
 
-    /* Allocate sprite buffer */
-    {
-      glGenVertexArrays(1, &r->sprites_vertex_array);
-      glBindVertexArray(r->sprites_vertex_array);
-      gl_ok_or_die;
-      glGenBuffers(1, &r->sprite_vertex_buffer);
-      glBindBuffer(GL_ARRAY_BUFFER, r->sprite_vertex_buffer);
-      glBufferData(GL_ARRAY_BUFFER, sizeof(r->vertices), 0, GL_DYNAMIC_DRAW);
-      gl_ok_or_die;
-
-      glEnableVertexAttribArray(0);
-      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->vertices), (void*) 0);
-      glEnableVertexAttribArray(1);
-      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->vertices), (void*) offsetof(SpriteVertex, tex));
-      glEnableVertexAttribArray(2);
-      glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(*r->vertices), (void*) offsetof(SpriteVertex, normal));
-    }
-
-    /* Allocate text buffer */
-    {
-      glGenVertexArrays(1, &r->text_vertex_array);
-      glBindVertexArray(r->text_vertex_array);
-      gl_ok_or_die;
-      glGenBuffers(1, &r->text_vertex_buffer);
-      glBindBuffer(GL_ARRAY_BUFFER, r->text_vertex_buffer);
-      glBufferData(GL_ARRAY_BUFFER, sizeof(r->text_vertices), 0, GL_DYNAMIC_DRAW);
-      gl_ok_or_die;
-
-      glEnableVertexAttribArray(0);
-      glEnableVertexAttribArray(1);
-      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) 0);
-      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) offsetof(SpriteVertex, tex));
-    }
-
-    /* Compile shaders */
-    r->sprite_shader = compile_shader("assets/shaders/sprite_vertex.glsl", "assets/shaders/sprite_fragment.glsl");
-    gl_ok_or_die;
-
-    /* Get/set uniforms */
-    glUseProgram(r->sprite_shader);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, r->sprite_atlas.id);
-    glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
-    r->sprite_camera_loc = glGetUniformLocation(r->sprite_shader, "camera");
-    r->sprite_far_z_loc = glGetUniformLocation(r->sprite_shader, "far_z");
-    r->sprite_near_z_loc = glGetUniformLocation(r->sprite_shader, "near_z");
-    r->sprite_nearsize_loc = glGetUniformLocation(r->sprite_shader, "nearsize");
-    gl_ok_or_die;
   }
 
+
   /* load game loop */
+  MainLoop main_loop;
+  Init init;
   {
-    void* obj = SDL_LoadObject("flat.so");
-    if (!obj) sdl_abort();
+    #ifdef OS_LINUX
+      void *obj = SDL_LoadObject("flat.so");
+    #else
+      void *obj = SDL_LoadObject("flat.dll");
+    #endif
+
+    if (!obj)
+      sdl_abort();
     *(void**)(&main_loop) = SDL_LoadFunction(obj, "main_loop");
-    if (!main_loop) sdl_abort();
+    if (!main_loop)
+      sdl_abort();
     *(void**)(&init) = SDL_LoadFunction(obj, "init");
-    if (!init) sdl_abort();
+    if (!init)
+      sdl_abort();
   }
 
   /* call init */
   {
-    Funs dfuns;
+    Funs dfuns = {};
     init(memory, MEMORY_SIZE, dfuns);
   }
+
 
   /* main loop */
   while (1) {
@@ -337,14 +351,12 @@ int main(int argc, const char** argv) {
         case SDL_KEYDOWN:
           if (event.key.repeat)
             break;
-
           ENUM_FOREACH(i, BUTTON) {
-            if (event.key.keysym.sym != key_codes[i])
-              continue;
-
-            input.was_pressed[i] = 1;
-            input.is_down[i] = 1;
-            break;
+            if (event.key.keysym.sym == key_codes[i]) {
+              input.was_pressed[i] = 1;
+              input.is_down[i] = 1;
+              break;
+            }
           }
           break;
 
@@ -367,6 +379,7 @@ int main(int argc, const char** argv) {
 
     err = main_loop(memory, SDL_GetTicks(), input, renderer);
     if (err) return 0;
+
 
     /* send camera position to shader */
     {
