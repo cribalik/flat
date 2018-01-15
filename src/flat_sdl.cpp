@@ -222,9 +222,6 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
 
   glViewport(0, 0, screen_w, screen_h);
 
-  // #define LOL
-
-
   /* Init renderer */
   {
     Renderer *r = renderer;
@@ -237,17 +234,8 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
 
     /* Allocate sprite buffer */
     glGenVertexArrays(1, &r->sprites_vertex_array);
-    gl_ok_or_die;
-    glGenVertexArrays(1, &r->text_vertex_array);
-    gl_ok_or_die;
-
     glGenBuffers(1, &r->sprite_vertex_buffer);
-    gl_ok_or_die;
-    glGenBuffers(1, &r->text_vertex_buffer);
-    gl_ok_or_die;
-
     glBindVertexArray(r->sprites_vertex_array);
-    gl_ok_or_die;
     glBindBuffer(GL_ARRAY_BUFFER, r->sprite_vertex_buffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(r->vertices), 0, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
@@ -258,15 +246,15 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(SpriteVertex), (void*) offsetof(SpriteVertex, normal));
 
     /* Allocate text buffer */
+    glGenVertexArrays(1, &r->text_vertex_array);
+    glGenBuffers(1, &r->text_vertex_buffer);
     glBindVertexArray(r->text_vertex_array);
     glBindBuffer(GL_ARRAY_BUFFER, r->text_vertex_buffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(r->text_vertices), 0, GL_DYNAMIC_DRAW);
-
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) 0);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) offsetof(SpriteVertex, tex));
-    glBindVertexArray(0);
 
     /* Compile shaders */
     r->sprite_shader = compile_shader("../../assets/shaders/sprite_vertex.glsl", "../../assets/shaders/sprite_fragment.glsl");
@@ -284,7 +272,7 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
     gl_ok_or_die;
 
     /* Load images into textures */
-    load_image_texture_from_file("..\\..\\assets\\spritesheet.png", &r->sprite_atlas.id, &r->sprite_atlas.size.x, &r->sprite_atlas.size.y);
+    load_image_texture_from_file( "../../assets/spritesheet.png", &r->sprite_atlas.id, &r->sprite_atlas.size.x, &r->sprite_atlas.size.y);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     /* Create font texture and read in font from file */
@@ -298,11 +286,10 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
       r->text_atlas.size.x = w;
       r->text_atlas.size.y = h;
 
-      load_font_from_file("..\\..\\assets\\Roboto-Regular.ttf", r->text_atlas.id, r->text_atlas.size.x, r->text_atlas.size.y, RENDERER_FIRST_CHAR, RENDERER_LAST_CHAR, RENDERER_FONT_SIZE, r->glyphs);
+      load_font_from_file( "../../assets/Roboto-Regular.ttf", r->text_atlas.id, r->text_atlas.size.x, r->text_atlas.size.y, RENDERER_FIRST_CHAR, RENDERER_LAST_CHAR, RENDERER_FONT_SIZE, r->glyphs);
       glBindTexture(GL_TEXTURE_2D, r->text_atlas.id);
       glGenerateMipmap(GL_TEXTURE_2D);
     }
-
   }
 
 

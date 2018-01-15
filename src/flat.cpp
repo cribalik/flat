@@ -150,7 +150,6 @@ static void collision_line(float x0, float y0, float x1, float y1, float wx0, fl
     *nx_out = -vy;
     *ny_out = vx;
   }
-  /*printf("%f %f (%f,%f)->(%f,%f) (%f,%f)\n", *t_out, s, x0, y0, x1, y1, wx0, wy0);*/
 }
 
 static int physics_rect_collide(Rect a, Rect b) {
@@ -252,8 +251,6 @@ static void handle_collision(State *s, Entity *e, float dt) {
       by = vy - dot * ny;
       bz = vz - dot * nz;
       e->vel = v3{bx/dt, by/dt, bz/dt};
-
-      /*printf("(%f,%f) (%f,%f) (%f,%f) (%f,%f)\n", nx, ny, vx, vy, ax, ay, bx, by);*/
     }
     else {
       /* TODO: handle collision with non-wall type */

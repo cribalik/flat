@@ -15,5 +15,16 @@
 	"settings":
 	{
 		"tab_size": 2
-	}
+	},
+	"build_systems":
+	[
+		{
+			"name": "windows",
+			"cmd": ["vcvars32.bat", "x86", "&", "cd", "${project_path}\\..\\build\\x86", "&", "..\\..\\build.cmd"],
+			"working_dir": "${project_path}\\..\\build\\x86",
+			"shell": true,
+			"file_regex": "^([^(\n]+)\\(([0-9]+)\\): ()([^\n]+)$"
+		}
+	]
+
 }

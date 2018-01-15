@@ -1,7 +1,7 @@
 #ifdef _MSC_VER
-  #define OS_WINDOWS
+  #define OS_WINDOWS 1
 #else
-  #define OS_LINUX
+  #define OS_LINUX 1
 #endif
 
 #include <stdio.h>
