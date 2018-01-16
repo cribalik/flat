@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
-#include "flat_gl.h"
+#include "flat_gl.hpp"
 
 #include <stdarg.h>
 

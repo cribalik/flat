@@ -1,7 +1,7 @@
 #define _POSIX_C_SOURCE 200112L
-#include "flat_math.h"
+#include "flat_math.hpp"
 #include "flat_utils.cpp"
-#include "flat_platform_api.h"
+#include "flat_platform_api.hpp"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
 #include <stdlib.h>
@@ -12,10 +12,10 @@
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
-#include "stb_truetype.h"
+#include "stb_truetype.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "stb_image.hpp"
 
 /* ======= Platform api ======= */
 
