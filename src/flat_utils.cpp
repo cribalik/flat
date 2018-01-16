@@ -459,8 +459,26 @@ static void* lblock_get(LBlock *lb) {
 
 
 
+static FILE* flat_fopen(const char *filename, const char *mode) {
+#ifdef OS_WINDOWS
+  FILE *f;
+  if (fopen_s(&f, filename, mode))
+    return 0;
+  return f;
+#else
+  return fopen(filename, mode);
+#endif
+}
 
-
+static const char* flat_strerror(int err) {
+#ifdef OS_WINDOWS
+  static char buf[128];
+  strerror_s(buf, sizeof(buf), err);
+  return buf;
+#else
+  return strerror(err);
+#endif
+}
 
 
 /***************/
@@ -469,7 +487,7 @@ static void* lblock_get(LBlock *lb) {
 static FILE* get_log_file() {
   static FILE *f;
   if (!f)
-    f = fopen("log.txt", "a");
+    f = flat_fopen("log.txt", "a");
   if (!f)
     abort();
   return f;
@@ -484,6 +502,15 @@ static void _die(const char* fmt, ...) {
   va_end(args);
   fflush(f);
   abort();
+}
+
+static bool flat_sprintf(char *buf, int bufsize, const char *fmt, ...) {
+  bool result;
+  va_list args;
+  va_start(args, fmt);
+  result = vsprintf_s(buf, bufsize, fmt, args) > bufsize;
+  va_end(args);
+  return result;
 }
 
 #define gl_ok_or_die _gl_ok_or_die(__FILE__, __LINE__)

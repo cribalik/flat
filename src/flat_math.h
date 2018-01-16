@@ -11,6 +11,11 @@ T min(T a, T b) {
   return b < a ? b : a;
 }
 
+template<class T>
+T abs(T x) {
+  return x < T() ? -x : x;
+}
+
 #include <math.h>
 
 #define PI 3.14159265f
@@ -31,7 +36,7 @@ static int next_pow2(int x) {
 }
 
 static bool equalf(float a, float b) {
-  return fabs(a-b) < 0.00001;
+  return abs(a-b) < 0.00001;
 }
 
 static float sqrt_inv(float number) {
@@ -56,11 +61,11 @@ static float lensq(float x0, float y0, float x1, float y1) {
 }
 
 static float length(float dx, float dy) {
-  return sqrt(dx*dx + dy*dy);
+  return (float)sqrt(dx*dx + dy*dy);
 }
 
 static float length(float dx, float dy, float dz) {
-  return sqrt(dx*dx + dy*dy + dz*dz);
+  return (float)sqrt(dx*dx + dy*dy + dz*dz);
 }
 
 static float sign(float x) {
@@ -176,6 +181,10 @@ static v2 operator/(v2 v, float x) {
   return {v.x/x, v.y/x};
 }
 
+static v3 operator/(v3 v, float x) {
+  return {v.x/x, v.y/x, v.z/x};
+}
+
 static v2 normalize(v2 v) {
   return v/length(v);
 }
@@ -184,8 +193,28 @@ static v3 operator+(v3 a, v3 b) {
   return {a.x+b.x, a.y+b.y, a.z+b.z};
 }
 
+static v3 operator*(v3 v, float f) {
+  return {v.x*f, v.y*f, v.z*f};
+}
+
+static v3 operator*(float f, v3 v) {
+  return v*f;
+}
+
 static v3 add(v3 v, float x, float y, float z) {
   return {v.x+x, v.y+y, v.z+z};
+}
+
+static v3 operator-(v3 v) {
+  return {-v.x, -v.y, -v.z};
+}
+
+static float lensq(v3 v) {
+  return v.x*v.x + v.y*v.y + v.z*v.z;
+}
+
+static float operator*(v3 a, v3 b) {
+  return a.x*b.x + a.y*b.y + a.z*b.z;
 }
 
 static float length(v3 v) {
@@ -202,7 +231,7 @@ struct Rect {
 typedef Rect Line;
 
 struct Cube {
-  float x0,y0,z0,x1,y1,z1;
+  v3 x0,x1;
 };
 
 static Cube cube_create(float x0, float y0, float z0, float x1, float y1, float z1) {

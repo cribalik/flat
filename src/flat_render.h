@@ -46,7 +46,7 @@ struct Renderer {
   #define RENDERER_LAST_CHAR 128
   #define RENDERER_FONT_SIZE 32.0f
   GLuint text_vertex_array, text_vertex_buffer;
-  TextVertex text_vertices[256];
+  TextVertex text_vertices[1024];
   int num_text_vertices;
   Texture text_atlas;
   Glyph glyphs[RENDERER_LAST_CHAR - RENDERER_FIRST_CHAR];

@@ -19,7 +19,7 @@ enum Button {
 };
 
 struct Input {
-  char was_pressed[BUTTON_COUNT], is_down[BUTTON_COUNT];
+  bool was_pressed[BUTTON_COUNT], is_down[BUTTON_COUNT];
   float lx, ly, rx, ry;
 };
 
@@ -34,6 +34,6 @@ struct Funs {
 #define GAME_MAIN_LOOP(name) int name(void* memory, long ms, Input input, Renderer *renderer)
 typedef GAME_MAIN_LOOP((*MainLoop));
 
-#define GAME_INIT(name) int name(void* memory, int memory_size, Funs function_ptrs)
+#define GAME_INIT(name) int name(void* memory, int memory_size, Funs function_ptrs, Renderer *renderer)
 typedef GAME_INIT((*Init));
 

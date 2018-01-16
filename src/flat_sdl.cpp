@@ -33,12 +33,12 @@ static GLuint compile_shader(const char* vertex_filename, const char* fragment_f
   GLint success;
   GLuint vertex_shader, fragment_shader;
 
-  vertex_file = fopen(vertex_filename, "r");
-  if (!vertex_file) die("Could not open vertex shader file %s: %s\n", vertex_filename, strerror(errno));
+  vertex_file = flat_fopen(vertex_filename, "r");
+  if (!vertex_file) die("Could not open vertex shader file %s: %s\n", vertex_filename, flat_strerror(errno));
   num_read = fread(shader_src, 1, sizeof(shader_src), vertex_file);
   shader_src[num_read] = 0;
   if (!feof(vertex_file)) die("File larger than buffer\n");
-  else if (ferror(vertex_file)) die("While reading vertex shader %s: %s\n", vertex_filename, strerror(errno));
+  else if (ferror(vertex_file)) die("While reading vertex shader %s: %s\n", vertex_filename, flat_strerror(errno));
 
   vertex_shader = glCreateShader(GL_VERTEX_SHADER);
   glShaderSource(vertex_shader, 1, &shader_src_list, 0);
@@ -49,12 +49,12 @@ static GLuint compile_shader(const char* vertex_filename, const char* fragment_f
     die("Could not compile vertex shader: %s\n", info_log);
   }
 
-  fragment_file = fopen(fragment_filename, "r");
-  if (!fragment_file) die("Could not open fragment shader file %s: %s\n", fragment_filename, strerror(errno));
+  fragment_file = flat_fopen(fragment_filename, "r");
+  if (!fragment_file) die("Could not open fragment shader file %s: %s\n", fragment_filename, flat_strerror(errno));
   num_read = fread(shader_src, 1, sizeof(shader_src), fragment_file);
   shader_src[num_read] = 0;
   if (!feof(fragment_file)) die("File larger than buffer\n");
-  else if (ferror(fragment_file)) die("While reading fragment shader %s: %s\n", fragment_filename, strerror(errno));
+  else if (ferror(fragment_file)) die("While reading fragment shader %s: %s\n", fragment_filename, flat_strerror(errno));
 
   fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
   glShaderSource(fragment_shader, 1, &shader_src_list, 0);
@@ -93,7 +93,7 @@ void load_image_texture_from_file(const char* filename, GLuint* result, int* w, 
     unsigned char *data;
     stbi_set_flip_vertically_on_load(1);
     data = stbi_load(filename, w, h, 0, 4);
-    if (!data) die("Failed to load image %s: %s\n", filename, strerror(errno));
+    if (!data) die("Failed to load image %s: %s\n", filename, flat_strerror(errno));
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, *w, *h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     stbi_image_free(data);
     gl_ok_or_die;
@@ -113,10 +113,10 @@ void load_font_from_file(const char* filename, GLuint gl_texture, int tex_w, int
 
   ttf_mem = (unsigned char*)malloc(BUFFER_SIZE);
   bitmap = (unsigned char*)malloc(tex_w * tex_h);
-  if (!ttf_mem || !bitmap) die("Failed to allocate memory for font: %s\n", strerror(errno));
+  if (!ttf_mem || !bitmap) die("Failed to allocate memory for font: %s\n", flat_strerror(errno));
 
-  f = fopen(filename, "rb");
-  if (!f) die("Failed to open ttf file %s: %s\n", filename, strerror(errno));
+  f = flat_fopen(filename, "rb");
+  if (!f) die("Failed to open ttf file %s: %s\n", filename, flat_strerror(errno));
   fread(ttf_mem, 1, BUFFER_SIZE, f);
 
   res = stbtt_BakeFontBitmap(ttf_mem, 0, height, bitmap, tex_w, tex_h, first_char, last_char - first_char, (stbtt_bakedchar*) out_glyphs);
@@ -138,6 +138,7 @@ static Button key_to_button(Sint32 key) {
   switch (key) {
     case SDLK_RETURN: return BUTTON_START;
     case SDLK_t: return BUTTON_A;
+    case SDLK_y: return BUTTON_B;
     case SDLK_UP: return BUTTON_UP;
     case SDLK_DOWN: return BUTTON_DOWN;
     case SDLK_LEFT: return BUTTON_LEFT;
@@ -163,6 +164,83 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
 
 #define sdl_try(stmt) ((stmt) && (die("%s\n", SDL_GetError()),0))
 #define sdl_abort() die("%s\n", SDL_GetError())
+
+#ifdef OS_WINDOWS
+static const char *dll_file = "flat.dll";
+static const char *dll_tmp_file = "flat_tmp.dll";
+#else
+static const char *dll_file = "flat.so";
+static const char *dll_tmp_file = "flat_tmp.so";
+#endif
+
+static void *dll_obj;
+
+static bool copy_file(const char *filename, const char *new_filename) {
+#ifdef OS_WINDOWS
+  return CopyFile(filename, new_filename, false);
+#else
+  char buf[1024];
+
+  FILE *a = fopen(filenmame, "rb");
+  if (!a) goto err;
+
+  FILE *b = fopen(new_filename, "wb");
+  if (!b) goto err;
+
+  while ((bytes = fread(buf, 1, sizeof(buf), a)) > 0)
+    if (fwrite(buf, 1, bytes, b))
+      goto err;
+
+  fclose(a);
+  fclose(b);
+  return true;
+
+  err:
+  if (a) fclose(a);
+  if (b) fclose(b);
+  return false;
+#endif
+}
+
+static void gamedll_load(MainLoop *main_loop, Init *init) {
+  if (dll_obj)
+    SDL_UnloadObject(dll_obj);
+
+  copy_file(dll_file, dll_tmp_file);
+
+  dll_obj = SDL_LoadObject(dll_tmp_file);
+  if (!dll_obj)
+    sdl_abort();
+  *(void**)(main_loop) = SDL_LoadFunction(dll_obj, "main_loop");
+  if (!main_loop)
+    sdl_abort();
+  *(void**)(init) = SDL_LoadFunction(dll_obj, "init");
+  if (!init)
+    sdl_abort();
+}
+
+static bool gamedll_has_changed() {
+  #ifdef OS_WINDOWS
+    static bool has_done_once;
+    static FILETIME last_time;
+
+    WIN32_FILE_ATTRIBUTE_DATA Data;
+    if(!GetFileAttributesEx(dll_file, GetFileExInfoStandard, &Data))
+      return false;
+
+    if (!has_done_once) {
+      has_done_once = true;
+      last_time = Data.ftLastWriteTime;
+      return false;
+    }
+
+    bool result = CompareFileTime(&last_time, &Data.ftLastWriteTime);
+    last_time = Data.ftLastWriteTime;
+    return result;
+  #else
+    #error "not implemented"
+  #endif
+}
 
 #ifdef OS_WINDOWS
   int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
@@ -224,7 +302,6 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
 
   /* Init renderer */
   {
-    Renderer *r = renderer;
     glEnable(GL_BLEND);
     gl_ok_or_die;
     glEnable(GL_DEPTH_TEST);
@@ -233,11 +310,11 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
     gl_ok_or_die;
 
     /* Allocate sprite buffer */
-    glGenVertexArrays(1, &r->sprites_vertex_array);
-    glGenBuffers(1, &r->sprite_vertex_buffer);
-    glBindVertexArray(r->sprites_vertex_array);
-    glBindBuffer(GL_ARRAY_BUFFER, r->sprite_vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(r->vertices), 0, GL_DYNAMIC_DRAW);
+    glGenVertexArrays(1, &renderer->sprites_vertex_array);
+    glGenBuffers(1, &renderer->sprite_vertex_buffer);
+    glBindVertexArray(renderer->sprites_vertex_array);
+    glBindBuffer(GL_ARRAY_BUFFER, renderer->sprite_vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(renderer->vertices), 0, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
@@ -246,48 +323,52 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(SpriteVertex), (void*) offsetof(SpriteVertex, normal));
 
     /* Allocate text buffer */
-    glGenVertexArrays(1, &r->text_vertex_array);
-    glGenBuffers(1, &r->text_vertex_buffer);
-    glBindVertexArray(r->text_vertex_array);
-    glBindBuffer(GL_ARRAY_BUFFER, r->text_vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(r->text_vertices), 0, GL_DYNAMIC_DRAW);
+    glGenVertexArrays(1, &renderer->text_vertex_array);
+    glGenBuffers(1, &renderer->text_vertex_buffer);
+    glBindVertexArray(renderer->text_vertex_array);
+    glBindBuffer(GL_ARRAY_BUFFER, renderer->text_vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(renderer->text_vertices), 0, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) 0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*r->text_vertices), (void*) offsetof(SpriteVertex, tex));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(*renderer->text_vertices), (void*) 0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(*renderer->text_vertices), (void*) offsetof(SpriteVertex, tex));
 
     /* Compile shaders */
-    r->sprite_shader = compile_shader("../../assets/shaders/sprite_vertex.glsl", "../../assets/shaders/sprite_fragment.glsl");
+    renderer->sprite_shader = compile_shader("../../assets/shaders/sprite_vertex.glsl", "../../assets/shaders/sprite_fragment.glsl");
     gl_ok_or_die;
 
     /* Get/set uniforms */
-    glUseProgram(r->sprite_shader);
+    glUseProgram(renderer->sprite_shader);
+    gl_ok_or_die;
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, r->sprite_atlas.id);
-    glUniform1i(glGetUniformLocation(r->sprite_shader, "u_texture"), 0);
-    r->sprite_camera_loc = glGetUniformLocation(r->sprite_shader, "camera");
-    r->sprite_far_z_loc = glGetUniformLocation(r->sprite_shader, "far_z");
-    r->sprite_near_z_loc = glGetUniformLocation(r->sprite_shader, "near_z");
-    r->sprite_nearsize_loc = glGetUniformLocation(r->sprite_shader, "nearsize");
+    gl_ok_or_die;
+    glBindTexture(GL_TEXTURE_2D, renderer->sprite_atlas.id);
+    gl_ok_or_die;
+    glUniform1i(glGetUniformLocation(renderer->sprite_shader, "u_texture"), 0);
+    gl_ok_or_die;
+    renderer->sprite_camera_loc = glGetUniformLocation(renderer->sprite_shader, "camera");
+    renderer->sprite_far_z_loc = glGetUniformLocation(renderer->sprite_shader, "far_z");
+    renderer->sprite_near_z_loc = glGetUniformLocation(renderer->sprite_shader, "near_z");
+    renderer->sprite_nearsize_loc = glGetUniformLocation(renderer->sprite_shader, "nearsize");
     gl_ok_or_die;
 
     /* Load images into textures */
-    load_image_texture_from_file( "../../assets/spritesheet.png", &r->sprite_atlas.id, &r->sprite_atlas.size.x, &r->sprite_atlas.size.y);
+    load_image_texture_from_file( "../../assets/spritesheet.png", &renderer->sprite_atlas.id, &renderer->sprite_atlas.size.x, &renderer->sprite_atlas.size.y);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     /* Create font texture and read in font from file */
     {
       const int w = 512, h = 512;
-      glGenTextures(1, &r->text_atlas.id);
-      glBindTexture(GL_TEXTURE_2D, r->text_atlas.id);
+      glGenTextures(1, &renderer->text_atlas.id);
+      glBindTexture(GL_TEXTURE_2D, renderer->text_atlas.id);
       glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, 0);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
       gl_ok_or_die;
-      r->text_atlas.size.x = w;
-      r->text_atlas.size.y = h;
+      renderer->text_atlas.size.x = w;
+      renderer->text_atlas.size.y = h;
 
-      load_font_from_file( "../../assets/Roboto-Regular.ttf", r->text_atlas.id, r->text_atlas.size.x, r->text_atlas.size.y, RENDERER_FIRST_CHAR, RENDERER_LAST_CHAR, RENDERER_FONT_SIZE, r->glyphs);
-      glBindTexture(GL_TEXTURE_2D, r->text_atlas.id);
+      load_font_from_file( "../../assets/Roboto-Regular.ttf", renderer->text_atlas.id, renderer->text_atlas.size.x, renderer->text_atlas.size.y, RENDERER_FIRST_CHAR, RENDERER_LAST_CHAR, RENDERER_FONT_SIZE, renderer->glyphs);
+      glBindTexture(GL_TEXTURE_2D, renderer->text_atlas.id);
       glGenerateMipmap(GL_TEXTURE_2D);
     }
   }
@@ -296,37 +377,23 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
   /* load game loop */
   MainLoop main_loop;
   Init init;
-  {
-    #ifdef OS_LINUX
-      void *obj = SDL_LoadObject("flat.so");
-    #else
-      void *obj = SDL_LoadObject("flat.dll");
-    #endif
-
-    if (!obj)
-      sdl_abort();
-    *(void**)(&main_loop) = SDL_LoadFunction(obj, "main_loop");
-    if (!main_loop)
-      sdl_abort();
-    *(void**)(&init) = SDL_LoadFunction(obj, "init");
-    if (!init)
-      sdl_abort();
-  }
+  gamedll_load(&main_loop, &init);
 
   /* call init */
   {
     Funs dfuns = {};
-    init(memory, MEMORY_SIZE, dfuns);
+    init(memory, MEMORY_SIZE, dfuns, renderer);
   }
 
 
   /* main loop */
-  while (1) {
+  unsigned int loop_index = 0;
+  for (;; ++loop_index) {
     int i;
     SDL_Event event;
 
     for (i = 0; i < ARRAY_LEN(input.was_pressed); ++i)
-      input.was_pressed[i] = 0;
+      input.was_pressed[i] = false;
 
     while (SDL_PollEvent(&event)) {
       switch (event.type) {
@@ -335,28 +402,19 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
             return 0;
           break;
 
-        case SDL_KEYDOWN:
+        case SDL_KEYDOWN: {
           if (event.key.repeat)
             break;
-          ENUM_FOREACH(i, BUTTON) {
-            if (event.key.keysym.sym == key_codes[i]) {
-              input.was_pressed[i] = 1;
-              input.is_down[i] = 1;
-              break;
-            }
-          }
-          break;
+          Button b = key_to_button(event.key.keysym.sym);
+          input.was_pressed[b] = true;
+          input.is_down[b] = true;
+        } break;
 
-        case SDL_KEYUP:
+        case SDL_KEYUP: {
           if (event.key.repeat)
             break;
-          ENUM_FOREACH(i, BUTTON) {
-            if (event.key.keysym.sym == key_codes[i]) {
-              input.is_down[i] = 0;
-              break;
-            }
-          }
-          break;
+          input.is_down[key_to_button(event.key.keysym.sym)] = false;
+        } break;
       }
     }
 
@@ -364,6 +422,9 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     gl_ok_or_die;
 
+    static int last_time;
+    if ((loop_index%100) == 0 && gamedll_has_changed())
+      gamedll_load(&main_loop, &init);
     err = main_loop(memory, SDL_GetTicks(), input, renderer);
     if (err) return 0;
 
@@ -372,9 +433,9 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
     {
       float w,h, far_z,near_z, fov;
       fov = PI/3.0f;
-      far_z = -10.0f;
-      near_z = -0.5f;
-      w = - 2.0f * near_z * tan(fov/2);
+      far_z = -50.0f;
+      near_z = -2.0f;
+      w = - 2.0f * near_z * (float)tan(fov/2.0f);
       h = w * 9.0f / 16.0f;
       glUniform3f(renderer->sprite_camera_loc, GET3(renderer->camera_pos));
       glUniform1f(renderer->sprite_far_z_loc, far_z);
@@ -401,6 +462,4 @@ STATIC_ASSERT(ARRAY_LEN(key_codes) == BUTTON_COUNT, assign_all_keycodes);
 
     SDL_GL_SwapWindow(window);
   }
-
-  return 0;
 }

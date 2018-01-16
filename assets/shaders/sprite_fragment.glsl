@@ -7,6 +7,6 @@ out vec4 color;
 uniform sampler2D tex;
 
 void main(){
-	color = vec4(f_normal + vec3(0.3,0.3,0.3), 1);
+	color = vec4(f_normal, 1) + texture(tex, f_tpos);
   // color = texture(tex, f_tpos);
 }
