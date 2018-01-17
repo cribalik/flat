@@ -504,15 +504,6 @@ static void _die(const char* fmt, ...) {
   abort();
 }
 
-static bool flat_sprintf(char *buf, int bufsize, const char *fmt, ...) {
-  bool result;
-  va_list args;
-  va_start(args, fmt);
-  result = vsprintf_s(buf, bufsize, fmt, args) > bufsize;
-  va_end(args);
-  return result;
-}
-
 #define gl_ok_or_die _gl_ok_or_die(__FILE__, __LINE__)
 static void _gl_ok_or_die(const char* file, int line) {
   GLenum error_code;

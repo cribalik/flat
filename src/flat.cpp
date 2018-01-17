@@ -626,6 +626,7 @@ GAME_MAIN_LOOP(main_loop) {
         if (input.was_pressed[BUTTON_A]) {
           e->vel.z = JUMP_POWER;
         }
+
         // gravity
         e->vel.z -= dt*GRAVITY;
 
